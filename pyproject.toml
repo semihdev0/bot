@@ -1,0 +1,9 @@
+[project]
+name = "bonus-approval-bot"
+version = "1.0.0"
+description = "Backoffice bonus approval automation bot"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

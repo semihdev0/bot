@@ -1,0 +1,25 @@
+# Genel Bot Ayarları
+
+browser:
+  headless: true          # true = görünmez çalışır, false = Chrome penceresi açılır
+  slow_mo: 100            # İşlemler arası bekleme (ms) - çok hızlı tıklamamak için
+  timeout: 30000          # Element bekleme süresi (ms)
+  viewport:
+    width: 1920
+    height: 1080
+
+backoffice:
+  base_url: ""            # .env dosyasından okunur, burası override için
+  login_path: "/login"
+  bonus_list_path: "/bonus/pending"
+  user_profile_path_template: "/users/{user_id}/profile"
+
+polling:
+  interval_seconds: 60           # Talep kontrol aralığı (saniye)
+  max_requests_per_cycle: 50     # Döngü başına max işlenecek talep
+  pause_on_empty_seconds: 120    # Talep yoksa uzun bekleme (saniye)
+
+session:
+  relogin_interval_minutes: 60   # Zorunlu yeniden giriş aralığı (dakika)
+  max_login_retries: 5           # Giriş başarısızsa max deneme
+  login_retry_delay_seconds: 30  # Denemeler arası bekleme (saniye)

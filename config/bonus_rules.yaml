@@ -1,0 +1,89 @@
+# Bonus Onay/Ret Kuralları
+# =======================
+# Her bonus türü için kurallar yukarıdan aşağıya değerlendirilir.
+# İlk eşleşen kural uygulanır. Eşleşme yoksa default_action uygulanır.
+#
+# Desteklenen operatörler:
+#   ==, !=, >, >=, <, <=, in, not_in, contains, between, is_empty, is_not_empty
+#
+# Bonus hesaplama yöntemleri:
+#   percentage: yatırımın yüzdesi (min/max sınırlı)
+#   fixed: sabit miktar
+#   tiered: kademe tablosu
+
+bonus_types:
+
+  hosgeldin_bonusu:
+    display_name: "Hoşgeldin Bonusu"
+    default_action: reject
+    default_reject_message_key: "genel_uygun_degil"
+    rules:
+      - name: "Yeni kullanıcı yeterli yatırım"
+        conditions:
+          - field: "kayit_gunu_farki"
+            operator: "<="
+            value: 7
+          - field: "son_yatirim_tutari"
+            operator: ">="
+            value: 100
+          - field: "bakiye"
+            operator: ">"
+            value: 0
+        action: approve
+        bonus_calculation:
+          method: "percentage"
+          base_field: "son_yatirim_tutari"
+          percentage: 100
+          min_amount: 10
+          max_amount: 500
+
+      - name: "Yatırım yetersiz"
+        conditions:
+          - field: "son_yatirim_tutari"
+            operator: "<"
+            value: 100
+        action: reject
+        reject_message_key: "yatirim_yetersiz"
+
+      - name: "Hesap çok eski"
+        conditions:
+          - field: "kayit_gunu_farki"
+            operator: ">"
+            value: 7
+        action: reject
+        reject_message_key: "hesap_eski"
+
+  yatirim_bonusu:
+    display_name: "Yatırım Bonusu"
+    default_action: reject
+    default_reject_message_key: "genel_uygun_degil"
+    rules:
+      - name: "Yeterli yatırım ve düşük bakiye"
+        conditions:
+          - field: "son_yatirim_tutari"
+            operator: ">="
+            value: 50
+          - field: "bakiye"
+            operator: "<"
+            value: 10
+        action: approve
+        bonus_calculation:
+          method: "percentage"
+          base_field: "son_yatirim_tutari"
+          percentage: 50
+          min_amount: 5
+          max_amount: 200
+
+      - name: "Bakiye yüksek"
+        conditions:
+          - field: "bakiye"
+            operator: ">="
+            value: 10
+        action: reject
+        reject_message_key: "bakiye_yuksek"
+
+  # Tanınmayan bonus türleri için varsayılan
+  _unknown:
+    display_name: "Bilinmeyen Bonus"
+    default_action: reject
+    default_reject_message_key: "bilinmeyen_bonus"

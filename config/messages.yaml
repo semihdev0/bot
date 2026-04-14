@@ -1,0 +1,26 @@
+# Ret Mesajı Şablonları
+# ====================
+# Her mesaj bir anahtar (key) ile tanımlanır.
+# Kurallar dosyasında reject_message_key ile bu anahtarlar referans edilir.
+
+rejection_messages:
+
+  genel_uygun_degil: >
+    Bonus talebiniz incelenmiş olup mevcut koşulları karşılamamaktadır.
+    Detaylı bilgi için müşteri hizmetlerimize başvurabilirsiniz.
+
+  yatirim_yetersiz: >
+    Yatırım tutarınız bu bonus için gerekli minimum tutarı karşılamamaktadır.
+    Lütfen yeterli tutarda yatırım yaparak tekrar deneyiniz.
+
+  hesap_eski: >
+    Bu bonus yalnızca yeni kayıt olan kullanıcılar için geçerlidir.
+    Diğer promosyonlarımız için kampanya sayfamızı inceleyebilirsiniz.
+
+  bakiye_yuksek: >
+    Mevcut bakiyeniz bu bonus türü için eşik değerin üzerindedir.
+    Bu bonus bakiyesi düşük kullanıcılar için tasarlanmıştır.
+
+  bilinmeyen_bonus: >
+    Bu bonus türü otomatik olarak işlenememiştir.
+    Manuel inceleme için yöneticiye iletilecektir.

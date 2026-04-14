@@ -1,0 +1,19 @@
+[Unit]
+Description=Backoffice Bonus Approval Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/user/bot
+ExecStart=/home/user/bot/.venv/bin/python -m src.main
+Restart=always
+RestartSec=30
+Environment=PYTHONUNBUFFERED=1
+
+# Logs
+StandardOutput=append:/home/user/bot/logs/bot-stdout.log
+StandardError=append:/home/user/bot/logs/bot-stderr.log
+
+[Install]
+WantedBy=multi-user.target

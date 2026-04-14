@@ -1,0 +1,83 @@
+# Sayfa Element Seçicileri
+# ========================
+# Her element için strategy (css/xpath/text/role) ve value belirleyin.
+# Ekran görüntüsü geldiğinde bu dosya gerçek seçicilerle doldurulacak.
+# Python kodunda değişiklik yapmaya GEREK YOK.
+
+login_page:
+  username_input:
+    strategy: css
+    value: "input[name='username']"
+  password_input:
+    strategy: css
+    value: "input[name='password']"
+  company_code_input:
+    strategy: css
+    value: "input[name='company_code']"
+  login_button:
+    strategy: css
+    value: "button[type='submit']"
+
+bonus_list_page:
+  request_rows:
+    strategy: css
+    value: "table tbody tr"
+  row_columns:
+    request_id:
+      strategy: css
+      value: "td:nth-child(1)"
+    user_id:
+      strategy: css
+      value: "td:nth-child(2)"
+    username:
+      strategy: css
+      value: "td:nth-child(3)"
+    bonus_type:
+      strategy: css
+      value: "td:nth-child(4)"
+    requested_amount:
+      strategy: css
+      value: "td:nth-child(5)"
+    status:
+      strategy: css
+      value: "td:nth-child(6)"
+    detail_link:
+      strategy: css
+      value: "td:nth-child(7) a"
+
+user_profile_page:
+  balance:
+    strategy: css
+    value: "#user-balance"
+  last_deposit_amount:
+    strategy: css
+    value: ".deposits-table tbody tr:first-child td.amount"
+  last_deposit_date:
+    strategy: css
+    value: ".deposits-table tbody tr:first-child td.date"
+  total_deposits:
+    strategy: css
+    value: "#total-deposits"
+  total_withdrawals:
+    strategy: css
+    value: "#total-withdrawals"
+  registration_date:
+    strategy: css
+    value: "#registration-date"
+
+bonus_action:
+  amount_input:
+    strategy: css
+    value: "input[name='bonus_amount']"
+  approve_button:
+    strategy: css
+    value: "button.approve"
+  reject_button:
+    strategy: css
+    value: "button.reject"
+  rejection_reason_input:
+    strategy: css
+    value: "textarea[name='rejection_reason']"
+  confirm_button:
+    strategy: css
+    value: "button.confirm"
