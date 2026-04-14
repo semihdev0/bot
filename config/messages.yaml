@@ -1,13 +1,13 @@
-# Ret Mesajı Şablonları
-# ====================
-# Her mesaj bir anahtar (key) ile tanımlanır.
-# Kurallar dosyasında reject_message_key ile bu anahtarlar referans edilir.
+# Betronix - Ret Mesajı Şablonları
+# ==================================
+# Bot reddetme sırasında bu mesajları kullanır.
+# Kurallar dosyasındaki reject_message_key ile eşleşir.
 
 rejection_messages:
 
   genel_uygun_degil: >
     Bonus talebiniz incelenmiş olup mevcut koşulları karşılamamaktadır.
-    Detaylı bilgi için müşteri hizmetlerimize başvurabilirsiniz.
+    Detaylı bilgi için canlı destek hattımızdan bilgi alabilirsiniz.
 
   yatirim_yetersiz: >
     Yatırım tutarınız bu bonus için gerekli minimum tutarı karşılamamaktadır.
@@ -19,8 +19,15 @@ rejection_messages:
 
   bakiye_yuksek: >
     Mevcut bakiyeniz bu bonus türü için eşik değerin üzerindedir.
-    Bu bonus bakiyesi düşük kullanıcılar için tasarlanmıştır.
+
+  aktif_bonus_mevcut: >
+    Hesabınızda aktif bir bonus bulunmaktadır.
+    Mevcut bonusunuz tamamlandıktan sonra yeni bonus talebinde bulunabilirsiniz.
 
   bilinmeyen_bonus: >
-    Bu bonus türü otomatik olarak işlenememiştir.
-    Manuel inceleme için yöneticiye iletilecektir.
+    Bu bonus türü otomatik olarak işlenememektedir.
+    Talebiniz manuel inceleme için yöneticiye iletilecektir.
+
+  hesap_pasif: >
+    Hesabınız aktif durumda değildir.
+    Lütfen müşteri hizmetleri ile iletişime geçiniz.

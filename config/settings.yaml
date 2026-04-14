@@ -11,8 +11,8 @@ browser:
 backoffice:
   base_url: ""            # .env dosyasından okunur, burası override için
   login_path: "/login"
-  bonus_list_path: "/bonus/pending"
-  user_profile_path_template: "/users/{user_id}/profile"
+  bonus_list_path: "/bonus-requests"
+  user_profile_path_template: "/players/{user_id}"
 
 polling:
   interval_seconds: 60           # Talep kontrol aralığı (saniye)

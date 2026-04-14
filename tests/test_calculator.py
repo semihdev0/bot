@@ -9,9 +9,10 @@ from src.engine.models import UserProfile
 
 def _make_profile(**kwargs) -> UserProfile:
     defaults = {
-        "user_id": "U001",
+        "user_id": "testuser",
         "son_yatirim_tutari": Decimal("200"),
         "bakiye": Decimal("50"),
+        "durum": "Aktif",
     }
     defaults.update(kwargs)
     return UserProfile(**defaults)
@@ -28,6 +29,20 @@ def test_percentage_calculation():
     assert result == Decimal("100")
 
 
+def test_percentage_15_kripto():
+    """15% of 1000 deposit = 150."""
+    profile = _make_profile(son_yatirim_tutari=Decimal("1000"))
+    calc = BonusCalculation(
+        method="percentage",
+        base_field="son_yatirim_tutari",
+        percentage=Decimal("15"),
+        min_amount=Decimal("15"),
+        max_amount=Decimal("1000"),
+    )
+    result = calculate_bonus(profile, calc)
+    assert result == Decimal("150")
+
+
 def test_percentage_with_min():
     profile = _make_profile(son_yatirim_tutari=Decimal("10"))
     calc = BonusCalculation(
@@ -41,15 +56,15 @@ def test_percentage_with_min():
 
 
 def test_percentage_with_max():
-    profile = _make_profile(son_yatirim_tutari=Decimal("1000"))
+    profile = _make_profile(son_yatirim_tutari=Decimal("10000"))
     calc = BonusCalculation(
         method="percentage",
         base_field="son_yatirim_tutari",
-        percentage=Decimal("100"),
-        max_amount=Decimal("500"),
+        percentage=Decimal("15"),
+        max_amount=Decimal("1000"),
     )
     result = calculate_bonus(profile, calc)
-    assert result == Decimal("500")  # clamped to max
+    assert result == Decimal("1000")  # clamped to max
 
 
 def test_fixed_calculation():

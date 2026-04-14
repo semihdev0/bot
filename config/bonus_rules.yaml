@@ -1,18 +1,111 @@
-# Bonus Onay/Ret Kuralları
-# =======================
+# Betronix - Bonus Onay/Ret Kuralları
+# =====================================
 # Her bonus türü için kurallar yukarıdan aşağıya değerlendirilir.
 # İlk eşleşen kural uygulanır. Eşleşme yoksa default_action uygulanır.
 #
-# Desteklenen operatörler:
-#   ==, !=, >, >=, <, <=, in, not_in, contains, between, is_empty, is_not_empty
+# Kullanılabilir profil alanları:
+#   bakiye, bonus_bakiye, toplam_yatirim, toplam_cekim, kar_zarar,
+#   son_yatirim_tutari, yatirim_sayisi, cekim_sayisi,
+#   kayit_gunu_farki, son_yatirim_gunu_farki,
+#   hesap_aktif (true/false), aktif_bonus_var (true/false),
+#   son_kullanilan_bonus, durum, aktif_bonus
 #
-# Bonus hesaplama yöntemleri:
-#   percentage: yatırımın yüzdesi (min/max sınırlı)
+# Operatörler: ==, !=, >, >=, <, <=, in, not_in, contains, between
+#
+# Hesaplama yöntemleri:
+#   percentage: yatırımın yüzdesi (base_field * percentage / 100, min/max sınırlı)
 #   fixed: sabit miktar
 #   tiered: kademe tablosu
+#
+# NOT: Bu kurallar örnek olarak yazılmıştır.
+# Gerçek kurallarınızı siz belirleyeceksiniz.
 
 bonus_types:
 
+  # %15 Kripto Yatırım Bonusu
+  kripto_yatirim_bonusu:
+    display_name: "%15 Kripto Yatırım Bonusu"
+    default_action: reject
+    default_reject_message_key: "genel_uygun_degil"
+    rules:
+      - name: "Kripto yatırım yapan aktif kullanıcı"
+        conditions:
+          - field: "hesap_aktif"
+            operator: "=="
+            value: true
+          - field: "son_yatirim_tutari"
+            operator: ">="
+            value: 100
+          - field: "aktif_bonus_var"
+            operator: "=="
+            value: false
+        action: approve
+        bonus_calculation:
+          method: "percentage"
+          base_field: "son_yatirim_tutari"
+          percentage: 15
+          min_amount: 15
+          max_amount: 1000
+
+      - name: "Aktif bonus var"
+        conditions:
+          - field: "aktif_bonus_var"
+            operator: "=="
+            value: true
+        action: reject
+        reject_message_key: "aktif_bonus_mevcut"
+
+  # %25 Anlık Kayıp Bonusu
+  anlik_kayip_bonusu:
+    display_name: "%25 Anlık Kayıp Bonusu"
+    default_action: reject
+    default_reject_message_key: "genel_uygun_degil"
+    rules:
+      - name: "Kayıp yaşayan aktif kullanıcı"
+        conditions:
+          - field: "hesap_aktif"
+            operator: "=="
+            value: true
+          - field: "bakiye"
+            operator: "<"
+            value: 10
+          - field: "toplam_yatirim"
+            operator: ">="
+            value: 100
+          - field: "aktif_bonus_var"
+            operator: "=="
+            value: false
+        action: approve
+        bonus_calculation:
+          method: "percentage"
+          base_field: "son_yatirim_tutari"
+          percentage: 25
+          min_amount: 10
+          max_amount: 500
+
+  # Çevrim bonusu
+  cevrim_bonusu:
+    display_name: "Çevrim Bonusu"
+    default_action: reject
+    default_reject_message_key: "genel_uygun_degil"
+    rules:
+      - name: "Yeterli yatırım yapan kullanıcı"
+        conditions:
+          - field: "hesap_aktif"
+            operator: "=="
+            value: true
+          - field: "toplam_yatirim"
+            operator: ">="
+            value: 500
+          - field: "aktif_bonus_var"
+            operator: "=="
+            value: false
+        action: approve
+        bonus_calculation:
+          method: "fixed"
+          fixed_amount: 100
+
+  # Hoşgeldin Bonusu (yeni kullanıcılar)
   hosgeldin_bonusu:
     display_name: "Hoşgeldin Bonusu"
     default_action: reject
@@ -29,6 +122,9 @@ bonus_types:
           - field: "bakiye"
             operator: ">"
             value: 0
+          - field: "aktif_bonus_var"
+            operator: "=="
+            value: false
         action: approve
         bonus_calculation:
           method: "percentage"
@@ -37,15 +133,7 @@ bonus_types:
           min_amount: 10
           max_amount: 500
 
-      - name: "Yatırım yetersiz"
-        conditions:
-          - field: "son_yatirim_tutari"
-            operator: "<"
-            value: 100
-        action: reject
-        reject_message_key: "yatirim_yetersiz"
-
-      - name: "Hesap çok eski"
+      - name: "Hesap 7 günden eski"
         conditions:
           - field: "kayit_gunu_farki"
             operator: ">"
@@ -53,36 +141,7 @@ bonus_types:
         action: reject
         reject_message_key: "hesap_eski"
 
-  yatirim_bonusu:
-    display_name: "Yatırım Bonusu"
-    default_action: reject
-    default_reject_message_key: "genel_uygun_degil"
-    rules:
-      - name: "Yeterli yatırım ve düşük bakiye"
-        conditions:
-          - field: "son_yatirim_tutari"
-            operator: ">="
-            value: 50
-          - field: "bakiye"
-            operator: "<"
-            value: 10
-        action: approve
-        bonus_calculation:
-          method: "percentage"
-          base_field: "son_yatirim_tutari"
-          percentage: 50
-          min_amount: 5
-          max_amount: 200
-
-      - name: "Bakiye yüksek"
-        conditions:
-          - field: "bakiye"
-            operator: ">="
-            value: 10
-        action: reject
-        reject_message_key: "bakiye_yuksek"
-
-  # Tanınmayan bonus türleri için varsayılan
+  # Tanınmayan bonus türleri - varsayılan davranış
   _unknown:
     display_name: "Bilinmeyen Bonus"
     default_action: reject

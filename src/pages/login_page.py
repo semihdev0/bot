@@ -1,6 +1,8 @@
-"""Login page interactions."""
+"""Login page interactions for Betronix backoffice."""
 
 from __future__ import annotations
+
+import asyncio
 
 import structlog
 
@@ -14,32 +16,39 @@ class LoginPage(BasePage):
     page_name = "login_page"
 
     async def login(self, credentials: Credentials) -> bool:
-        """Perform login with username, password, and company code.
+        """Perform login to Betronix backoffice.
 
+        Form order: Company ID -> Username -> Password -> Sign In
         Returns True if login was successful.
         """
-        logger.info("login_starting", url=credentials.url)
+        login_url = f"{credentials.url.rstrip('/')}/login"
+        logger.info("login_starting", url=login_url)
 
-        await self.navigate(credentials.url)
+        await self.navigate(login_url)
+        await asyncio.sleep(2)  # Wait for page to fully render
 
-        # Fill login form
+        # Fill login form in correct order: Company ID first
+        await self.fill("company_code_input", credentials.company_code)
         await self.fill("username_input", credentials.username)
         await self.fill("password_input", credentials.password)
-        await self.fill("company_code_input", credentials.company_code)
 
-        # Submit
+        # Click Sign In
         await self.click("login_button")
 
         # Wait for navigation after login
         try:
-            await self.page.wait_for_load_state("domcontentloaded", timeout=15000)
-            # Check if we're still on the login page (login failed)
-            current_url = self.page.url
-            if "login" in current_url.lower():
-                logger.error("login_failed", reason="still_on_login_page")
-                return False
-            logger.info("login_successful")
+            await self.page.wait_for_url(
+                lambda url: "login" not in url.lower(),
+                timeout=15000,
+            )
+            logger.info("login_successful", url=self.page.url)
             return True
-        except Exception as e:
-            logger.error("login_error", error=str(e))
+        except Exception:
+            # Fallback: check URL manually
+            await asyncio.sleep(3)
+            current_url = self.page.url
+            if "login" not in current_url.lower():
+                logger.info("login_successful", url=current_url)
+                return True
+            logger.error("login_failed", reason="still_on_login_page")
             return False

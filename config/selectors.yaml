@@ -1,83 +1,168 @@
-# Sayfa Element Seçicileri
-# ========================
-# Her element için strategy (css/xpath/text/role) ve value belirleyin.
-# Ekran görüntüsü geldiğinde bu dosya gerçek seçicilerle doldurulacak.
-# Python kodunda değişiklik yapmaya GEREK YOK.
+# Betronix Backoffice (bo.betronix.net) - Sayfa Element Seçicileri
+# ==================================================================
+# Panel güncellenirse sadece bu dosya düzenlenir, Python kodu değişmez.
 
 login_page:
-  username_input:
-    strategy: css
-    value: "input[name='username']"
-  password_input:
-    strategy: css
-    value: "input[name='password']"
+  # Giriş formu sırası: Company ID -> Username -> Password -> Sign In
   company_code_input:
     strategy: css
-    value: "input[name='company_code']"
-  login_button:
+    value: "input[placeholder*='Company'], input[name*='company'], form input:nth-of-type(1)"
+  username_input:
     strategy: css
-    value: "button[type='submit']"
+    value: "input[placeholder*='Username'], input[name*='username'], form input:nth-of-type(2)"
+  password_input:
+    strategy: css
+    value: "input[type='password']"
+  login_button:
+    strategy: text
+    value: "Sign In"
 
 bonus_list_page:
+  # Bonus Talepleri tablosu - /bonus-requests
+  # Filtre sekmeleri
+  pending_filter:
+    strategy: text
+    value: "Beklemede"
+  # Tablo satırları
   request_rows:
     strategy: css
-    value: "table tbody tr"
+    value: "table tbody tr, [class*='table'] [class*='row']:not([class*='header'])"
   row_columns:
-    request_id:
+    # OYUNCU (isim + #ID)
+    player_name:
       strategy: css
       value: "td:nth-child(1)"
-    user_id:
-      strategy: css
-      value: "td:nth-child(2)"
+    # KULLANICI ADI (@username)
     username:
       strategy: css
-      value: "td:nth-child(3)"
+      value: "td:nth-child(2)"
+    # BONUS (isim + tür etiketi)
     bonus_type:
       strategy: css
-      value: "td:nth-child(4)"
+      value: "td:nth-child(3)"
+    # TUTAR (0 ₺)
     requested_amount:
       strategy: css
+      value: "td:nth-child(4)"
+    # ÇEVRİM (3x)
+    turnover:
+      strategy: css
       value: "td:nth-child(5)"
+    # DURUM (Beklemede)
     status:
       strategy: css
       value: "td:nth-child(6)"
-    detail_link:
+    # TARİH
+    date:
       strategy: css
-      value: "td:nth-child(7) a"
+      value: "td:nth-child(7)"
+  # Her satırın sonundaki işlem butonları: ✓ ✗ 👁
+  row_actions:
+    approve_button:
+      strategy: css
+      value: "button[class*='success'], button[class*='approve'], button[class*='check'], [class*='action'] button:nth-child(1)"
+    reject_button:
+      strategy: css
+      value: "button[class*='danger'], button[class*='reject'], button[class*='close'], [class*='action'] button:nth-child(2)"
+    view_button:
+      strategy: css
+      value: "button[class*='eye'], button[class*='view'], button[class*='detail'], [class*='action'] button:nth-child(3)"
 
-user_profile_page:
-  balance:
+# Talebi Onayla Modalı
+approve_modal:
+  # "Özel değerler kullan" checkbox'ı
+  custom_values_checkbox:
+    strategy: text
+    value: "Özel değerler kullan"
+  # Özel Tutar (TRY) input
+  custom_amount_input:
     strategy: css
-    value: "#user-balance"
-  last_deposit_amount:
+    value: "input[placeholder*='Tutar'], input[name*='amount'], [class*='modal'] input[type='number']:nth-of-type(1)"
+  # Özel Çevrim (x) input
+  custom_turnover_input:
     strategy: css
-    value: ".deposits-table tbody tr:first-child td.amount"
-  last_deposit_date:
-    strategy: css
-    value: ".deposits-table tbody tr:first-child td.date"
-  total_deposits:
-    strategy: css
-    value: "#total-deposits"
-  total_withdrawals:
-    strategy: css
-    value: "#total-withdrawals"
-  registration_date:
-    strategy: css
-    value: "#registration-date"
-
-bonus_action:
-  amount_input:
-    strategy: css
-    value: "input[name='bonus_amount']"
-  approve_button:
-    strategy: css
-    value: "button.approve"
-  reject_button:
-    strategy: css
-    value: "button.reject"
-  rejection_reason_input:
-    strategy: css
-    value: "textarea[name='rejection_reason']"
+    value: "input[placeholder*='Çevrim'], input[name*='turnover'], [class*='modal'] input[type='number']:nth-of-type(2)"
+  # Onayla butonu (yeşil)
   confirm_button:
+    strategy: text
+    value: "Onayla"
+  # İptal butonu
+  cancel_button:
+    strategy: text
+    value: "İptal"
+
+# Talebi Reddet Modalı
+reject_modal:
+  # Red nedeni textarea/input
+  reason_input:
     strategy: css
-    value: "button.confirm"
+    value: "[class*='modal'] textarea, [class*='modal'] input[type='text'], [class*='dialog'] textarea"
+  # Reddet onay butonu
+  confirm_button:
+    strategy: text
+    value: "Reddet"
+  # İptal butonu
+  cancel_button:
+    strategy: text
+    value: "İptal"
+
+# Kullanıcı Profil Sayfası
+# URL: bo.betronix.net/players/{user_id} veya kullanıcı adına tıklayınca açılan sayfa
+user_profile_page:
+  # --- Finansal Bilgiler kartı (sağ üst) ---
+  bakiye:
+    strategy: text
+    value: "Bakiye"
+  bonus_bakiye:
+    strategy: text
+    value: "Bonus"
+  toplam_yatirim:
+    strategy: text
+    value: "Toplam Yatırım"
+  toplam_cekim:
+    strategy: text
+    value: "Toplam Çekim"
+  kar_zarar:
+    strategy: text
+    value: "Kar/Zarar"
+
+  # --- Yatırım Bilgileri kartı (orta üst) ---
+  ilk_yatirim:
+    strategy: text
+    value: "İlk Yatırım"
+  son_yatirim:
+    strategy: text
+    value: "Son Yatırım"
+  yatirim_sayisi:
+    strategy: text
+    value: "Yatırım Sayısı"
+  cekim_sayisi:
+    strategy: text
+    value: "Çekim Sayısı"
+  son_kullanilan_bonus:
+    strategy: text
+    value: "Son Kullanılan Bonus"
+
+  # --- Hesap Bilgileri kartı ---
+  durum:
+    strategy: text
+    value: "Durum"
+  kayit_tarihi:
+    strategy: text
+    value: "Kayıt Tarihi"
+  son_giris:
+    strategy: text
+    value: "Son Giriş"
+
+  # --- Aktif Bonus bölümü ---
+  aktif_bonus:
+    strategy: text
+    value: "Aktif Bonus"
+
+  # --- Sekmeler (profil alt bölümü) ---
+  yatirimlar_tab:
+    strategy: text
+    value: "Yatırımlar"
+  bonuslar_tab:
+    strategy: text
+    value: "Bonuslar"
