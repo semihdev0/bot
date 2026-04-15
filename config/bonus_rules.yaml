@@ -64,22 +64,6 @@ bonus_types:
         action: reject
         reject_message_key: "ilk_kayip_bakiye_yuksek"
 
-      - name: "Yatırım tutarı 100 TL altında"
-        conditions:
-          - field: "son_yatirim_tutari"
-            operator: "<"
-            value: 100
-        action: reject
-        reject_message_key: "ilk_kayip_genel_ret"
-
-      - name: "Yatırım tutarı 1000 TL üstünde"
-        conditions:
-          - field: "son_yatirim_tutari"
-            operator: ">"
-            value: 1000
-        action: reject
-        reject_message_key: "ilk_kayip_genel_ret"
-
       - name: "İlk yatırım kayıp - onay"
         conditions:
           - field: "yatirim_sayisi"
@@ -91,19 +75,11 @@ bonus_types:
           - field: "son_yatirim_gunu_farki"
             operator: "<="
             value: 1
-          - field: "son_yatirim_tutari"
-            operator: ">="
-            value: 100
-          - field: "son_yatirim_tutari"
-            operator: "<="
-            value: 1000
         action: approve
         bonus_calculation:
           method: "percentage"
           base_field: "son_yatirim_tutari"
           percentage: 100
-          min_amount: 100
-          max_amount: 1000
           turnover: 5
 
   # ============================================================
