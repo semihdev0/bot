@@ -190,8 +190,15 @@ class BonusListPage(BasePage):
         except Exception:
             return False
 
+    # Status values that indicate a pending (actionable) request
+    _PENDING_STATUSES = ("pending", "beklemede")
+
     async def get_pending_requests(self, max_count: int = 50) -> list[BonusRequest]:
         """Extract pending bonus requests from the current table page.
+
+        Only rows with "Pending" / "Beklemede" status are included.
+        Rows that are already "Approved", "Rejected", etc. are skipped
+        because they only have a view button (no approve/reject).
 
         Returns requests in REVERSE order (bottom-to-top = oldest first)
         so that the oldest pending request is processed first.
@@ -202,12 +209,23 @@ class BonusListPage(BasePage):
         logger.info("bonus_rows_found", count=count)
 
         requests: list[BonusRequest] = []
+        skipped = 0
         for i in range(min(count, max_count)):
             try:
                 row = rows_locator.nth(i)
                 request = await self._extract_request_from_row(row, i)
                 if request:
-                    requests.append(request)
+                    # Only include pending requests
+                    if request.status.lower() in self._PENDING_STATUSES:
+                        requests.append(request)
+                    else:
+                        skipped += 1
+                        logger.debug(
+                            "row_skipped_not_pending",
+                            row_index=i,
+                            status=request.status,
+                            request_id=request.request_id,
+                        )
             except Exception as e:
                 logger.warning("row_extraction_error", row_index=i, error=str(e))
                 continue
@@ -215,7 +233,11 @@ class BonusListPage(BasePage):
         # Reverse: oldest (bottom of table) processed first
         requests.reverse()
 
-        logger.info("pending_requests_extracted", count=len(requests))
+        logger.info(
+            "pending_requests_extracted",
+            count=len(requests),
+            skipped_non_pending=skipped,
+        )
         return requests
 
     # ------------------------------------------------------------------
