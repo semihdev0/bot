@@ -100,64 +100,35 @@ class UserProfilePage(BasePage):
         """Extract all relevant user data from the Betronix profile page.
 
         Extracts data from:
-        1. Profile info cards (Financial, Deposit, Account info)
+        1. Profile info cards (Financial, Deposit, Account info) via JS DOM traversal
         2. Deposits tab (deposit history)
         3. Withdrawals tab (withdrawal history)
         4. Bonuses tab (bonus history)
 
-        Panel UI can be English or Turkish - tries both.
+        Panel UI can be English or Turkish - handles both.
         """
-        # --- Extract page text for debugging AND parsing ---
-        page_text = await self.page.evaluate(
-            "() => document.body.innerText"
-        )
-        logger.info(
-            "profile_page_dump",
-            user_id=user_id,
-            text_length=len(page_text),
-            first_500=page_text[:500],
-        )
+        # --- Extract all card values in one shot via JavaScript ---
+        card = await self._extract_all_card_values(user_id)
 
-        # --- Financial Information card ---
-        bakiye = await self._extract_value_by_labels("Balance", "Bakiye")
-        bonus_bakiye = await self._extract_value_by_labels("Bonus")
-        toplam_yatirim = await self._extract_value_by_labels(
-            "Total Deposits", "Total Deposit", "Toplam Yatırım"
-        )
-        toplam_cekim = await self._extract_value_by_labels(
-            "Total Withdrawals", "Total Withdrawal", "Toplam Çekim"
-        )
-        kar_zarar = await self._extract_value_by_labels("Profit/Loss", "Kar/Zarar")
+        bakiye = card.get("bakiye", "")
+        bonus_bakiye = card.get("bonus_bakiye", "")
+        toplam_yatirim = card.get("toplam_yatirim", "")
+        toplam_cekim = card.get("toplam_cekim", "")
+        kar_zarar = card.get("kar_zarar", "")
+        ilk_yatirim_raw = card.get("ilk_yatirim", "")
+        son_yatirim_raw = card.get("son_yatirim", "")
+        yatirim_sayisi_raw = card.get("yatirim_sayisi", "")
+        cekim_sayisi_raw = card.get("cekim_sayisi", "")
+        son_kullanilan_bonus = card.get("son_kullanilan_bonus", "")
+        durum = card.get("durum", "")
+        kayit_tarihi_raw = card.get("kayit_tarihi", "")
+        son_giris_raw = card.get("son_giris", "")
+        aktif_bonus = card.get("aktif_bonus", "")
 
-        # --- Deposit Info card ---
-        ilk_yatirim_raw = await self._extract_value_by_labels(
-            "First Deposit", "İlk Yatırım"
-        )
-        son_yatirim_raw = await self._extract_value_by_labels(
-            "Last Deposit", "Son Yatırım"
-        )
-        yatirim_sayisi_raw = await self._extract_value_by_labels(
-            "Deposit Count", "Yatırım Sayısı"
-        )
-        cekim_sayisi_raw = await self._extract_value_by_labels(
-            "Withdrawal Count", "Çekim Sayısı"
-        )
-        son_kullanilan_bonus = await self._extract_value_by_labels(
-            "Last Bonus", "Son Kullanılan Bonus"
-        )
+        # Clean up aktif_bonus
+        if aktif_bonus.strip().lower() in ("", "-", "none", "no bonus", "no bonus used"):
+            aktif_bonus = ""
 
-        # --- Account Information card ---
-        durum = await self._extract_value_by_labels(
-            "Status", "Account Status", "Durum", "Hesap Durumu"
-        )
-        kayit_tarihi_raw = await self._extract_value_by_labels(
-            "Registered", "Registration Date", "Kayıt Tarihi"
-        )
-        son_giris_raw = await self._extract_value_by_labels(
-            "Last Login", "Last Sign In", "Son Giriş"
-        )
-
-        # Debug: log all extracted raw values
         logger.info(
             "profile_raw_values",
             user_id=user_id,
@@ -166,11 +137,8 @@ class UserProfilePage(BasePage):
             durum=durum[:30] if durum else "EMPTY",
             yatirim_sayisi=yatirim_sayisi_raw[:30] if yatirim_sayisi_raw else "",
             son_yatirim=son_yatirim_raw[:30] if son_yatirim_raw else "",
-            aktif_bonus=(await self._extract_aktif_bonus())[:30],
+            aktif_bonus=aktif_bonus[:30] if aktif_bonus else "",
         )
-
-        # --- Active Bonus ---
-        aktif_bonus = await self._extract_aktif_bonus()
 
         # --- Tab Data: Yatırımlar, Çekimler, Bonuslar ---
         deposits = await self._extract_deposit_history()
@@ -392,54 +360,151 @@ class UserProfilePage(BasePage):
         return last.amount if last else Decimal("0")
 
     # ------------------------------------------------------------------
-    # Label-based extraction (profile cards)
+    # Card value extraction via JavaScript DOM traversal
     # ------------------------------------------------------------------
 
-    async def _extract_value_by_labels(self, *labels: str) -> str:
-        """Try multiple labels (English/Turkish) and return first match."""
-        for label in labels:
-            value = await self._extract_value_by_label(label)
-            if value and value != "-" and value != "0":
-                return value
-        # Second pass: accept "0" or "-" if nothing better
-        for label in labels:
-            value = await self._extract_value_by_label(label)
-            if value:
-                return value
-        return ""
+    # Map of label text (as it appears on page) → canonical key
+    _LABEL_ALIASES: dict[str, str] = {
+        "Bakiye": "bakiye",
+        "Balance": "bakiye",
+        "Bonus": "bonus_bakiye",
+        "Toplam Yatırım": "toplam_yatirim",
+        "Total Deposits": "toplam_yatirim",
+        "Total Deposit": "toplam_yatirim",
+        "Toplam Çekim": "toplam_cekim",
+        "Total Withdrawals": "toplam_cekim",
+        "Total Withdrawal": "toplam_cekim",
+        "Kar/Zarar": "kar_zarar",
+        "Profit/Loss": "kar_zarar",
+        "İlk Yatırım": "ilk_yatirim",
+        "First Deposit": "ilk_yatirim",
+        "Son Yatırım": "son_yatirim",
+        "Last Deposit": "son_yatirim",
+        "Yatırım Sayısı": "yatirim_sayisi",
+        "Deposit Count": "yatirim_sayisi",
+        "Çekim Sayısı": "cekim_sayisi",
+        "Withdrawal Count": "cekim_sayisi",
+        "Son Kullanılan Bonus": "son_kullanilan_bonus",
+        "Last Bonus": "son_kullanilan_bonus",
+        "Durum": "durum",
+        "Status": "durum",
+        "Account Status": "durum",
+        "Hesap Durumu": "durum",
+        "Kayıt Tarihi": "kayit_tarihi",
+        "Registration Date": "kayit_tarihi",
+        "Registered": "kayit_tarihi",
+        "Son Giriş": "son_giris",
+        "Last Login": "son_giris",
+        "Last Sign In": "son_giris",
+        "Aktif Bonus": "aktif_bonus",
+        "Active Bonus": "aktif_bonus",
+    }
 
-    async def _extract_value_by_label(self, label: str) -> str:
-        """Extract the value next to a label on the profile page."""
+    _EXTRACT_CARDS_JS = """(labels) => {
+        const result = {};
+
+        // ---- Strategy 1: DOM traversal ----
+        // Walk all text nodes, find exact label matches,
+        // then climb up to 5 parent levels looking for a sibling
+        // element that contains the value.
+        const walker = document.createTreeWalker(
+            document.body, NodeFilter.SHOW_TEXT
+        );
+        const found = [];
+        while (walker.nextNode()) {
+            const t = walker.currentNode.textContent.trim();
+            if (t && labels.includes(t)) {
+                found.push({ text: t, el: walker.currentNode.parentElement });
+            }
+        }
+
+        for (const { text, el } of found) {
+            if (result[text]) continue;
+
+            let current = el;
+            for (let lvl = 0; lvl < 5; lvl++) {
+                const sib = current.nextElementSibling;
+                if (sib) {
+                    const val = (sib.innerText || sib.textContent || '').trim();
+                    // Accept if non-empty, different from label, and not another label
+                    if (val && val !== text && !labels.includes(val)) {
+                        result[text] = val.split('\\n')[0].trim();
+                        break;
+                    }
+                }
+                const parent = current.parentElement;
+                if (!parent || parent === document.body) break;
+                current = parent;
+            }
+        }
+
+        // ---- Strategy 2: innerText line-by-line fallback ----
+        // Label on one line, value on the next line.
+        const lines = document.body.innerText
+            .split('\\n')
+            .map(l => l.trim())
+            .filter(l => l.length > 0);
+
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (labels.includes(line) && !result[line] && i + 1 < lines.length) {
+                const next = lines[i + 1];
+                if (!labels.includes(next)) {
+                    result[line] = next;
+                }
+            }
+        }
+
+        return result;
+    }"""
+
+    async def _extract_all_card_values(self, user_id: str) -> dict[str, str]:
+        """Extract all profile card values using JavaScript DOM traversal.
+
+        Two strategies run inside a single page.evaluate() call:
+        1. DOM traversal – find exact label text nodes, walk up to 5
+           parent levels checking for a next-sibling with the value.
+        2. innerText fallback – label on one line, value on the next.
+
+        Returns a dict mapping canonical keys (bakiye, durum, …) to
+        raw string values.
+        """
+        label_list = list(self._LABEL_ALIASES.keys())
+
         try:
-            label_locator = self.page.get_by_text(label, exact=False).first
-            if await label_locator.count() == 0:
-                return ""
-
-            parent = label_locator.locator("..")
-            parent_text = await parent.text_content() or ""
-            value = parent_text.replace(label, "").strip()
-            value = re.sub(r"\s+", " ", value).strip()
-
-            logger.debug("label_value_extracted", label=label, value=value[:50])
-            return value
+            js_result: dict[str, str] = await self.page.evaluate(
+                self._EXTRACT_CARDS_JS, label_list
+            )
         except Exception as e:
-            logger.debug("label_extraction_failed", label=label, error=str(e))
-            return ""
+            logger.error("card_extraction_js_failed", error=str(e))
+            js_result = {}
 
-    async def _extract_aktif_bonus(self) -> str:
-        """Extract active bonus name from the Active Bonus section."""
-        for label in ("Active Bonus", "Aktif Bonus"):
-            try:
-                section = self.page.get_by_text(label, exact=False).first
-                if await section.count() > 0:
-                    parent = section.locator("..")
-                    text = await parent.text_content() or ""
-                    cleaned = text.replace(label, "").strip()
-                    if cleaned and cleaned not in ("-", "None", "No bonus"):
-                        return cleaned.split("\n")[0].strip()
-            except Exception:
-                continue
-        return ""
+        # Also log page text for debugging
+        try:
+            page_text = await self.page.evaluate("() => document.body.innerText")
+            logger.info(
+                "profile_page_dump",
+                user_id=user_id,
+                text_length=len(page_text),
+                first_500=page_text[:500],
+            )
+        except Exception:
+            pass
+
+        # Map label aliases → canonical keys
+        canonical: dict[str, str] = {}
+        for label_text, raw_value in js_result.items():
+            key = self._LABEL_ALIASES.get(label_text)
+            if key and key not in canonical and raw_value:
+                canonical[key] = raw_value
+
+        logger.info(
+            "card_values_extracted",
+            user_id=user_id,
+            found_keys=list(canonical.keys()),
+            values={k: v[:50] for k, v in canonical.items()},
+        )
+        return canonical
 
     # ------------------------------------------------------------------
     # Parsers
