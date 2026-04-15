@@ -34,8 +34,14 @@ from src.pages.base import BasePage
 logger = structlog.get_logger()
 
 # Successful deposit/withdrawal status keywords (English + Turkish)
-_SUCCESS_KEYWORDS = ("completed", "success", "tamamlan", "başarılı", "onaylan")
-_FAILED_KEYWORDS = ("rejected", "cancelled", "failed", "başarısız", "iptal", "reddedil")
+_SUCCESS_KEYWORDS = (
+    "completed", "success", "approved", "confirmed", "accepted", "paid",
+    "tamamlan", "başarılı", "onaylan", "kabul",
+)
+_FAILED_KEYWORDS = (
+    "rejected", "cancelled", "failed", "declined", "denied",
+    "başarısız", "iptal", "reddedil",
+)
 
 
 class UserProfilePage(BasePage):
@@ -313,14 +319,53 @@ class UserProfilePage(BasePage):
     # ------------------------------------------------------------------
 
     async def _click_tab(self, *tab_names: str) -> None:
-        """Click a tab trying multiple names (English/Turkish)."""
+        """Click a profile tab trying multiple names (English/Turkish).
+
+        IMPORTANT: The sidebar also has links like "Deposits" and
+        "Withdrawals".  We must click the PROFILE TAB, not the sidebar.
+        Strategy order:
+        1. [role='tab'] buttons (shadcn/Radix tab components)
+        2. Buttons within a tablist
+        3. Last resort: any text match (but try Turkish names first
+           since sidebar uses English)
+        """
         for name in tab_names:
-            tab = self.page.get_by_text(name, exact=True).first
-            if await tab.count() > 0:
-                await tab.click()
-                await asyncio.sleep(1.5)
-                logger.debug("tab_clicked", name=name)
-                return
+            # Strategy 1: role=tab (most specific, avoids sidebar)
+            try:
+                tab = self.page.get_by_role("tab", name=name, exact=True)
+                if await tab.count() > 0:
+                    await tab.first.click()
+                    await asyncio.sleep(1.5)
+                    logger.debug("tab_clicked", name=name, strategy="role_tab")
+                    return
+            except Exception:
+                pass
+
+            # Strategy 2: button inside a tablist
+            try:
+                tab = self.page.locator("[role='tablist'] button").filter(
+                    has_text=name
+                )
+                if await tab.count() > 0:
+                    await tab.first.click()
+                    await asyncio.sleep(1.5)
+                    logger.debug("tab_clicked", name=name, strategy="tablist_button")
+                    return
+            except Exception:
+                pass
+
+        # Strategy 3: try Turkish names first (sidebar uses English)
+        for name in reversed(tab_names):
+            try:
+                tab = self.page.get_by_text(name, exact=True).first
+                if await tab.count() > 0:
+                    await tab.click()
+                    await asyncio.sleep(1.5)
+                    logger.debug("tab_clicked", name=name, strategy="text_fallback")
+                    return
+            except Exception:
+                pass
+
         logger.warning("tab_not_found", tried=tab_names)
 
     async def _select_time_filter(self, *filter_names: str) -> None:
