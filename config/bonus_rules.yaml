@@ -32,14 +32,6 @@ bonus_types:
     default_action: reject
     default_reject_message_key: "ilk_kayip_genel_ret"
     rules:
-      - name: "Hesap pasif"
-        conditions:
-          - field: "hesap_aktif"
-            operator: "=="
-            value: false
-        action: reject
-        reject_message_key: "hesap_pasif"
-
       - name: "Aktif bonus mevcut"
         conditions:
           - field: "aktif_bonus_var"
@@ -98,9 +90,6 @@ bonus_types:
 
       - name: "İlk yatırım kayıp - onay"
         conditions:
-          - field: "hesap_aktif"
-            operator: "=="
-            value: true
           - field: "aktif_bonus_var"
             operator: "=="
             value: false
