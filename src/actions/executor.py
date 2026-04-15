@@ -261,12 +261,14 @@ class BonusActionExecutor:
                     await asyncio.sleep(0.5)
                     break
 
-        # Fill custom amount - try multiple selectors
+        # Fill custom amount
         amount_str = str(int(amount))
         amount_filled = False
         for sel in [
-            "input[placeholder*='Tutar']",
+            "input[placeholder*='Amount']",
             "input[name*='amount']",
+            "input[name*='Amount']",
+            "input[placeholder*='Tutar']",
             "input[type='number']",
         ]:
             try:
@@ -279,9 +281,8 @@ class BonusActionExecutor:
                 continue
 
         if not amount_filled:
-            # Fallback: try on page scope
             for sel in [
-                "input[placeholder*='Tutar']",
+                "input[placeholder*='Amount']",
                 "input[name*='amount']",
             ]:
                 try:
@@ -293,9 +294,12 @@ class BonusActionExecutor:
                 except Exception:
                     continue
 
-        # Fill custom turnover if specified
+        # Fill custom wagering/turnover if specified
         if turnover is not None:
             for sel in [
+                "input[placeholder*='Wagering']",
+                "input[name*='wagering']",
+                "input[name*='Wagering']",
                 "input[placeholder*='Çevrim']",
                 "input[name*='turnover']",
             ]:
