@@ -1,19 +1,37 @@
 [Unit]
-Description=Backoffice Bonus Approval Bot
-After=network.target
+Description=Betronix Bonus Approval Bot
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
+User=user
+Group=user
 WorkingDirectory=/home/user/bot
+
 ExecStart=/home/user/bot/.venv/bin/python -m src.main
 Restart=always
-RestartSec=30
+RestartSec=10
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
 Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/home/user
 
 # Logs
-StandardOutput=append:/home/user/bot/logs/bot-stdout.log
-StandardError=append:/home/user/bot/logs/bot-stderr.log
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=bonus-bot
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/home/user/bot
+PrivateTmp=true
+
+# Resource limits
+MemoryMax=1G
+TasksMax=64
 
 [Install]
 WantedBy=multi-user.target
