@@ -26,6 +26,8 @@ class BonusListPage(BasePage):
         url = f"{base_url.rstrip('/')}{path}"
         await self.navigate(url)
         await asyncio.sleep(2)  # Wait for table to load
+        # Reinstall observer after navigation (JS state lost)
+        await self.install_toast_observer()
         logger.info("bonus_list_loaded", url=url)
 
     async def set_rows_per_page(self, count: int = 50) -> None:
@@ -63,47 +65,128 @@ class BonusListPage(BasePage):
         except Exception as e:
             logger.warning("rows_per_page_change_failed", error=str(e))
 
-    async def wait_for_notification(self, timeout_seconds: int = 300) -> bool:
-        """Wait for the 'Yeni Bonus Talebi' toast notification.
+    async def install_toast_observer(self) -> None:
+        """Install a MutationObserver that detects Sonner toast notifications.
 
-        The backoffice pushes a toast to the bottom-right with the text
-        'Yeni Bonus Talebi' (or 'New Bonus Request' in English) whenever
-        a new bonus request is submitted.
+        The backoffice uses the Sonner library for toasts.  Toasts are
+        rendered as ``<ol data-sonner-toaster>`` with ``<li>`` children.
+        Playwright's ``wait_for(state='visible')`` fails because the
+        container has ``--front-toast-height: 0px``.  Instead we watch
+        for new DOM nodes whose text contains bonus-related keywords.
+        """
+        await self.page.evaluate(
+            """() => {
+            window.__bonusToastDetected = false;
+            window.__bonusToastText = '';
+            if (window.__bonusObserver) {
+                window.__bonusObserver.disconnect();
+            }
+            window.__bonusObserver = new MutationObserver((mutations) => {
+                for (const m of mutations) {
+                    for (const n of m.addedNodes) {
+                        if (n.nodeType === 1) {
+                            const txt = (n.textContent || '').toLowerCase();
+                            if (txt.includes('yeni bonus') || txt.includes('new bonus')) {
+                                window.__bonusToastDetected = true;
+                                window.__bonusToastText = (n.textContent || '').substring(0, 200);
+                            }
+                        }
+                    }
+                }
+            });
+            window.__bonusObserver.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        }"""
+        )
+        logger.debug("toast_observer_installed")
+
+    async def wait_for_notification(self, timeout_seconds: int = 300) -> bool:
+        """Wait for the 'Yeni Bonus Talebi' Sonner toast notification.
+
+        Uses a MutationObserver (installed via ``install_toast_observer``)
+        that sets ``window.__bonusToastDetected`` when a new DOM node
+        containing 'yeni bonus' or 'new bonus' is added.  We poll this
+        flag every 2 seconds.
 
         Returns True if a notification was detected, False on timeout.
         """
-        timeout_ms = timeout_seconds * 1000
-
         logger.debug("waiting_for_notification", timeout_seconds=timeout_seconds)
 
-        try:
-            # Primary: wait for the known notification text
-            locator = self.page.get_by_text("Yeni Bonus Talebi").or_(
-                self.page.get_by_text("New Bonus Request")
-            )
-            await locator.first.wait_for(state="visible", timeout=timeout_ms)
+        # Make sure observer is installed
+        observer_exists = await self.page.evaluate(
+            "() => typeof window.__bonusObserver !== 'undefined'"
+        )
+        if not observer_exists:
+            await self.install_toast_observer()
 
-            text = (await locator.first.text_content() or "").strip()
-            logger.info("notification_detected", text=text[:100])
-            return True
+        # Reset the flag before waiting
+        await self.page.evaluate("() => { window.__bonusToastDetected = false; }")
 
-        except Exception:
-            logger.debug("notification_wait_timeout", timeout_seconds=timeout_seconds)
-            return False
+        elapsed = 0
+        poll_interval = 2  # seconds
+
+        while elapsed < timeout_seconds:
+            await asyncio.sleep(poll_interval)
+            elapsed += poll_interval
+
+            try:
+                detected = await self.page.evaluate(
+                    "() => window.__bonusToastDetected"
+                )
+                if detected:
+                    toast_text = await self.page.evaluate(
+                        "() => window.__bonusToastText || ''"
+                    )
+                    logger.info("notification_detected", text=toast_text[:100])
+                    # Reset for next cycle
+                    await self.page.evaluate(
+                        "() => { window.__bonusToastDetected = false; window.__bonusToastText = ''; }"
+                    )
+                    return True
+            except Exception:
+                # Page might have navigated away – reinstall observer
+                logger.debug("observer_check_failed_reinstalling")
+                try:
+                    await self.install_toast_observer()
+                except Exception:
+                    pass
+
+        logger.debug("notification_wait_timeout", timeout_seconds=timeout_seconds)
+        return False
 
     async def reload_page(self) -> None:
         """Reload the current page to reflect new requests."""
         await self.page.reload(wait_until="domcontentloaded")
         await asyncio.sleep(2)  # Wait for table to re-render
+        # Reinstall observer – page reload destroys JS state
+        await self.install_toast_observer()
         logger.info("page_reloaded")
 
     async def has_pending_notification(self) -> bool:
         """Quick check if a notification is currently visible (non-blocking)."""
         try:
-            locator = self.page.get_by_text("Yeni Bonus Talebi").or_(
-                self.page.get_by_text("New Bonus Request")
+            # Check MutationObserver flag first
+            detected = await self.page.evaluate(
+                "() => window.__bonusToastDetected === true"
             )
-            return await locator.first.is_visible()
+            if detected:
+                await self.page.evaluate(
+                    "() => { window.__bonusToastDetected = false; window.__bonusToastText = ''; }"
+                )
+                return True
+
+            # Fallback: check if Sonner toaster has visible toast content
+            has_sonner = await self.page.evaluate(
+                """() => {
+                const toaster = document.querySelector('[data-sonner-toaster]');
+                if (!toaster) return false;
+                const items = toaster.querySelectorAll('li');
+                return items.length > 0;
+            }"""
+            )
+            return has_sonner
         except Exception:
             return False
 

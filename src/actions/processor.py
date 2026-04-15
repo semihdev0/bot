@@ -91,6 +91,9 @@ class BonusProcessor:
         # Increase rows per page from default 20 → 50
         await bonus_list.set_rows_per_page(50)
 
+        # Install Sonner toast observer for notification detection
+        await bonus_list.install_toast_observer()
+
         # Process any already-pending requests on first load (all pages)
         await self._process_all_pages(bonus_list, base_url)
 
