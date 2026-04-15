@@ -30,7 +30,7 @@ bonus_types:
   ilk_kaybiniza_ozel_nakit_iade_bonusu:
     display_name: "İlk Yatırıma Özel %100 Kayıp Bonusu"
     default_action: reject
-    default_reject_message_key: "ilk_kayip_genel_ret"
+    default_reject_message_key: "ilk_kayip_yatirim_yok"
     rules:
       - name: "Hiç yatırım yok"
         conditions:

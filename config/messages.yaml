@@ -23,10 +23,6 @@ rejection_messages:
     Talebiniz manuel inceleme için yöneticiye iletilecektir.
 
   # --- İlk Yatırıma Özel %100 Kayıp Bonusu ---
-  ilk_kayip_genel_ret: >-
-    Bonus talebiniz incelenmiş olup mevcut koşulları karşılamamaktadır.
-    Detaylı bilgi için canlı destek hattımızdan bilgi alabilirsiniz.
-
   ilk_kayip_yatirim_yok: >-
     Bu bonustan yararlanmak için ilk yatırımınızı yapmanız gerekmektedir.
     Risksiz yatırım sağlayabilirsiniz. Kaybetmeniz halinde dahi
