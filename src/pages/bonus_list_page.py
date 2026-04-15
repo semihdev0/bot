@@ -64,38 +64,45 @@ class BonusListPage(BasePage):
             logger.warning("rows_per_page_change_failed", error=str(e))
 
     async def wait_for_notification(self, timeout_seconds: int = 300) -> bool:
-        """Wait for a 'Yeni Bonus Talebi' toast notification to appear.
+        """Wait for ANY toast/notification to appear in the bottom-right.
 
-        The backoffice pushes a toast to the bottom-right corner whenever
-        a new bonus request is submitted. Instead of polling, we watch
-        for this DOM element and only refresh when it appears.
+        The backoffice pushes a toast whenever a new bonus request is
+        submitted. We treat ANY visible toast as a trigger to reload,
+        since bonus requests are the primary activity on this page.
 
         Returns True if a notification was detected, False on timeout.
         """
         timeout_ms = timeout_seconds * 1000
-        notification_sel = self.selectors.get(self.page_name, "new_request_notification")
+
+        # Broad selector: catch any toast library (sonner, react-hot-toast,
+        # react-toastify, radix toast, or custom implementations)
+        toast_selectors = (
+            "[class*='toast']",
+            "[class*='Toast']",
+            "[class*='Toastify']",
+            "[class*='sonner']",
+            "[class*='Sonner']",
+            "[class*='notification']",
+            "[class*='Notification']",
+            "[class*='snackbar']",
+            "[role='alert']",
+            "[role='status']",
+            "[data-sonner-toast]",
+            "[data-radix-toast]",
+        )
+        combined = ", ".join(toast_selectors)
 
         logger.debug("waiting_for_notification", timeout_seconds=timeout_seconds)
 
         try:
-            # Wait for any toast/notification container to appear
-            locator = self._to_locator(notification_sel)
-            await locator.first.wait_for(state="visible", timeout=timeout_ms)
+            locator = self.page.locator(combined).first
+            await locator.wait_for(state="visible", timeout=timeout_ms)
 
-            # Verify it's actually a bonus notification by checking text
-            text = (await locator.first.text_content() or "").lower()
-            is_bonus = any(kw in text for kw in self._NOTIFICATION_KEYWORDS)
-
-            if is_bonus:
-                logger.info("bonus_notification_detected", text=text.strip()[:80])
-                return True
-
-            # It's some other notification, not a bonus one
-            logger.debug("non_bonus_notification", text=text.strip()[:80])
-            return False
+            text = (await locator.first.text_content() or "").strip()
+            logger.info("notification_detected", text=text[:100])
+            return True
 
         except Exception:
-            # Timeout or element not found
             logger.debug("notification_wait_timeout", timeout_seconds=timeout_seconds)
             return False
 
@@ -287,6 +294,11 @@ class BonusListPage(BasePage):
 
             # Normalize bonus type for rule matching
             bonus_type_key = self._normalize_bonus_type(bonus_type)
+            logger.debug(
+                "bonus_type_normalized",
+                raw=bonus_type[:80],
+                key=bonus_type_key,
+            )
 
             return BonusRequest(
                 request_id=request_id,

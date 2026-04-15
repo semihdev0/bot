@@ -18,7 +18,7 @@ polling:
   interval_seconds: 60           # Talep kontrol aralığı (saniye)
   max_requests_per_cycle: 50     # Döngü başına max işlenecek talep
   pause_on_empty_seconds: 120    # Talep yoksa uzun bekleme (saniye)
-  notification_timeout_seconds: 30   # Bildirim bekleme süresi (30sn), sonra yenileme
+  notification_timeout_seconds: 300  # Bildirim bekleme süresi (5dk), sonra güvenlik yenilemesi
 
 session:
   relogin_interval_minutes: 60   # Zorunlu yeniden giriş aralığı (dakika)
