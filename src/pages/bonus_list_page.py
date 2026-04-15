@@ -453,44 +453,112 @@ class BonusListPage(BasePage):
 
         This is safe against table reordering – it always finds the
         correct row regardless of new inserts or removals.
+
+        Uses a cascading strategy:
+        1. Try configured CSS selectors (color-class based)
+        2. Fallback: find ALL buttons in the last cell and assign by
+           position (1st=approve, 2nd=reject, 3rd=view)
         """
         row = await self.find_row_by_request_id(request_id)
         if row is None:
             return None
 
+        # Strategy 1: configured selectors
         approve_sel = self.selectors.get_nested(
             self.page_name, "row_actions", "approve_button"
         )
         reject_sel = self.selectors.get_nested(
             self.page_name, "row_actions", "reject_button"
         )
-        view_sel = self.selectors.get_nested(
-            self.page_name, "row_actions", "view_button"
+
+        approve_loc = row.locator(approve_sel.value).first
+        reject_loc = row.locator(reject_sel.value).first
+
+        approve_ok = await approve_loc.count() > 0
+        reject_ok = await reject_loc.count() > 0
+
+        if approve_ok and reject_ok:
+            return {
+                "approve": approve_loc,
+                "reject": reject_loc,
+                "view": row.locator("td:last-child button").nth(2),
+            }
+
+        # Strategy 2: find all buttons in the last cell by position
+        last_cell_buttons = row.locator("td:last-child button")
+        btn_count = await last_cell_buttons.count()
+        logger.info(
+            "action_buttons_fallback",
+            request_id=request_id,
+            button_count=btn_count,
         )
 
-        return {
-            "approve": row.locator(approve_sel.value).first,
-            "reject": row.locator(reject_sel.value).first,
-            "view": row.locator(view_sel.value).first,
+        if btn_count == 0:
+            # Try broader: any button in the row's last few cells
+            last_cell_buttons = row.locator("td:nth-last-child(-n+2) button")
+            btn_count = await last_cell_buttons.count()
+
+        if btn_count == 0:
+            # Debug: log what's actually in the last cell
+            try:
+                last_cell_html = await row.locator("td:last-child").first.evaluate(
+                    "e => e.innerHTML"
+                )
+                logger.warning(
+                    "no_action_buttons_found",
+                    request_id=request_id,
+                    last_cell_html=last_cell_html[:300],
+                )
+            except Exception:
+                pass
+            return None
+
+        # Typical order: approve (green/check), reject (red/x), view (eye)
+        result = {
+            "approve": last_cell_buttons.nth(0),
+            "reject": last_cell_buttons.nth(1) if btn_count > 1 else last_cell_buttons.nth(0),
+            "view": last_cell_buttons.nth(2) if btn_count > 2 else last_cell_buttons.nth(0),
         }
+
+        # Debug: log button classes for future selector tuning
+        for i in range(min(btn_count, 3)):
+            try:
+                cls = await last_cell_buttons.nth(i).get_attribute("class") or ""
+                logger.debug(
+                    "action_button_discovered",
+                    index=i,
+                    class_preview=cls[:100],
+                )
+            except Exception:
+                pass
+
+        return result
 
     async def get_row_action_buttons(self, row_index: int) -> dict[str, Locator]:
         """Get action buttons by row index (legacy fallback)."""
         rows_locator = self.locate("request_rows")
         row = rows_locator.nth(row_index)
 
+        last_cell_buttons = row.locator("td:last-child button")
+        btn_count = await last_cell_buttons.count()
+
+        if btn_count >= 2:
+            return {
+                "approve": last_cell_buttons.nth(0),
+                "reject": last_cell_buttons.nth(1),
+                "view": last_cell_buttons.nth(2) if btn_count > 2 else last_cell_buttons.nth(0),
+            }
+
+        # Fallback to configured selectors
         approve_sel = self.selectors.get_nested(
             self.page_name, "row_actions", "approve_button"
         )
         reject_sel = self.selectors.get_nested(
             self.page_name, "row_actions", "reject_button"
         )
-        view_sel = self.selectors.get_nested(
-            self.page_name, "row_actions", "view_button"
-        )
 
         return {
             "approve": row.locator(approve_sel.value).first,
             "reject": row.locator(reject_sel.value).first,
-            "view": row.locator(view_sel.value).first,
+            "view": row.locator("td:last-child button").nth(2),
         }

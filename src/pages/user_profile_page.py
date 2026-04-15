@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import structlog
@@ -574,13 +574,15 @@ class UserProfilePage(BasePage):
     def _parse_date(text: str) -> datetime | None:
         """Parse date from Betronix format.
 
-        Profile cards show: '6h ago 15.04.2026 17:00' or '03/25, 03:17 PM 25.03.2026 15:17'
-        We extract the dd.mm.YYYY HH:MM pattern wherever it appears.
+        Supports:
+        - Relative: '8h ago', '2d ago', '30m ago', '1w ago'
+        - Absolute: '15.04.2026 17:00'
+        - Mixed:    '8h ago 15.04.2026 17:00'
         """
         if not text or text.strip() in ("", "-"):
             return None
 
-        # Try to find a dd.mm.YYYY HH:MM pattern anywhere in the text
+        # --- Strategy 1: Absolute date pattern dd.mm.YYYY HH:MM ---
         date_match = re.search(r"(\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2})", text)
         if date_match:
             try:
@@ -588,7 +590,7 @@ class UserProfilePage(BasePage):
             except ValueError:
                 pass
 
-        # Try to find dd/mm/YYYY HH:MM pattern
+        # dd/mm/YYYY HH:MM pattern
         date_match = re.search(r"(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})", text)
         if date_match:
             try:
@@ -596,7 +598,22 @@ class UserProfilePage(BasePage):
             except ValueError:
                 pass
 
-        # Fallback: try each line with multiple formats
+        # --- Strategy 2: Relative time ("8h ago", "2d ago", "30m ago") ---
+        rel_match = re.search(r"(\d+)\s*(m|h|d|w)\s*ago", text, re.IGNORECASE)
+        if rel_match:
+            amount = int(rel_match.group(1))
+            unit = rel_match.group(2).lower()
+            now = datetime.now()
+            if unit == "m":
+                return now - timedelta(minutes=amount)
+            elif unit == "h":
+                return now - timedelta(hours=amount)
+            elif unit == "d":
+                return now - timedelta(days=amount)
+            elif unit == "w":
+                return now - timedelta(weeks=amount)
+
+        # --- Strategy 3: Try common date formats line by line ---
         for fmt in (
             "%d.%m.%Y %H:%M",
             "%d.%m.%Y %H:%M:%S",
