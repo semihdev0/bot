@@ -62,31 +62,51 @@ class UserProfilePage(BasePage):
         """Extract all relevant user data from the Betronix profile page.
 
         Extracts data from:
-        1. Profile info cards (Finansal, Yatırım, Hesap bilgileri)
-        2. Yatırımlar tab (deposit history)
-        3. Çekimler tab (withdrawal history)
-        4. Bonuslar tab (bonus history)
+        1. Profile info cards (Financial, Deposit, Account info)
+        2. Deposits tab (deposit history)
+        3. Withdrawals tab (withdrawal history)
+        4. Bonuses tab (bonus history)
+
+        Panel UI can be English or Turkish - tries both.
         """
-        # --- Finansal Bilgiler ---
-        bakiye = await self._extract_value_by_label("Bakiye")
-        bonus_bakiye = await self._extract_value_by_label("Bonus")
-        toplam_yatirim = await self._extract_value_by_label("Toplam Yatırım")
-        toplam_cekim = await self._extract_value_by_label("Toplam Çekim")
-        kar_zarar = await self._extract_value_by_label("Kar/Zarar")
+        # --- Financial Information card ---
+        bakiye = await self._extract_value_by_labels("Balance", "Bakiye")
+        bonus_bakiye = await self._extract_value_by_labels("Bonus")
+        toplam_yatirim = await self._extract_value_by_labels(
+            "Total Deposits", "Total Deposit", "Toplam Yatırım"
+        )
+        toplam_cekim = await self._extract_value_by_labels(
+            "Total Withdrawals", "Total Withdrawal", "Toplam Çekim"
+        )
+        kar_zarar = await self._extract_value_by_labels("Profit/Loss", "Kar/Zarar")
 
-        # --- Yatırım Bilgileri ---
-        ilk_yatirim_raw = await self._extract_value_by_label("İlk Yatırım")
-        son_yatirim_raw = await self._extract_value_by_label("Son Yatırım")
-        yatirim_sayisi_raw = await self._extract_value_by_label("Yatırım Sayısı")
-        cekim_sayisi_raw = await self._extract_value_by_label("Çekim Sayısı")
-        son_kullanilan_bonus = await self._extract_value_by_label("Son Kullanılan Bonus")
+        # --- Deposit Info card ---
+        ilk_yatirim_raw = await self._extract_value_by_labels(
+            "First Deposit", "İlk Yatırım"
+        )
+        son_yatirim_raw = await self._extract_value_by_labels(
+            "Last Deposit", "Son Yatırım"
+        )
+        yatirim_sayisi_raw = await self._extract_value_by_labels(
+            "Deposit Count", "Yatırım Sayısı"
+        )
+        cekim_sayisi_raw = await self._extract_value_by_labels(
+            "Withdrawal Count", "Çekim Sayısı"
+        )
+        son_kullanilan_bonus = await self._extract_value_by_labels(
+            "Last Bonus", "Son Kullanılan Bonus"
+        )
 
-        # --- Hesap Bilgileri ---
-        durum = await self._extract_value_by_label("Durum")
-        kayit_tarihi_raw = await self._extract_value_by_label("Kayıt Tarihi")
-        son_giris_raw = await self._extract_value_by_label("Son Giriş")
+        # --- Account Information card ---
+        durum = await self._extract_value_by_labels("Status", "Durum")
+        kayit_tarihi_raw = await self._extract_value_by_labels(
+            "Registered", "Kayıt Tarihi"
+        )
+        son_giris_raw = await self._extract_value_by_labels(
+            "Last Login", "Son Giriş"
+        )
 
-        # --- Aktif Bonus ---
+        # --- Active Bonus ---
         aktif_bonus = await self._extract_aktif_bonus()
 
         # --- Tab Data: Yatırımlar, Çekimler, Bonuslar ---
@@ -145,8 +165,8 @@ class UserProfilePage(BasePage):
         """
         entries: list[DepositEntry] = []
         try:
-            await self._click_tab("Yatırımlar")
-            await self._select_time_filter("Tüm Zamanlar")
+            await self._click_tab("Deposits", "Yatırımlar")
+            await self._select_time_filter("All", "All Time", "Tüm Zamanlar")
 
             rows = self.page.locator("table tbody tr")
             count = await rows.count()
@@ -183,14 +203,11 @@ class UserProfilePage(BasePage):
         return DepositHistory(entries=entries)
 
     async def _extract_withdrawal_history(self) -> WithdrawalHistory:
-        """Extract withdrawal entries from the Çekimler tab.
-
-        Table columns: REFERANS KODU | TUTAR | YÖNTEM | DURUM | TARİH
-        """
+        """Extract withdrawal entries from the Withdrawals tab."""
         entries: list[WithdrawalEntry] = []
         try:
-            await self._click_tab("Çekimler")
-            await self._select_time_filter("Tüm Zamanlar")
+            await self._click_tab("Withdrawals", "Çekimler")
+            await self._select_time_filter("All", "All Time", "Tüm Zamanlar")
 
             rows = self.page.locator("table tbody tr")
             count = await rows.count()
@@ -229,8 +246,8 @@ class UserProfilePage(BasePage):
         """
         entries: list[BonusHistoryEntry] = []
         try:
-            await self._click_tab("Bonuslar")
-            await self._select_time_filter("Tüm Zamanlar")
+            await self._click_tab("Bonuses", "Bonuslar")
+            await self._select_time_filter("All", "All Time", "Tüm Zamanlar")
 
             rows = self.page.locator("table tbody tr")
             count = await rows.count()
@@ -264,22 +281,28 @@ class UserProfilePage(BasePage):
     # Tab helpers
     # ------------------------------------------------------------------
 
-    async def _click_tab(self, tab_name: str) -> None:
-        """Click a tab on the profile page (Yatırımlar, Çekimler, Bonuslar, etc.)."""
-        tab = self.page.get_by_text(tab_name, exact=True).first
-        if await tab.count() > 0:
-            await tab.click()
-            await asyncio.sleep(1.5)
+    async def _click_tab(self, *tab_names: str) -> None:
+        """Click a tab trying multiple names (English/Turkish)."""
+        for name in tab_names:
+            tab = self.page.get_by_text(name, exact=True).first
+            if await tab.count() > 0:
+                await tab.click()
+                await asyncio.sleep(1.5)
+                logger.debug("tab_clicked", name=name)
+                return
+        logger.warning("tab_not_found", tried=tab_names)
 
-    async def _select_time_filter(self, filter_name: str) -> None:
-        """Select a time filter (Tüm Zamanlar, Son 7 Gün, etc.)."""
-        try:
-            time_filter = self.page.get_by_text(filter_name, exact=True).first
-            if await time_filter.count() > 0:
-                await time_filter.click()
-                await asyncio.sleep(1)
-        except Exception:
-            pass
+    async def _select_time_filter(self, *filter_names: str) -> None:
+        """Select a time filter trying multiple names (English/Turkish)."""
+        for name in filter_names:
+            try:
+                time_filter = self.page.get_by_text(name, exact=True).first
+                if await time_filter.count() > 0:
+                    await time_filter.click()
+                    await asyncio.sleep(1)
+                    return
+            except Exception:
+                continue
 
     async def _safe_cell_text(self, row, col_index: int) -> str:
         """Safely get text from a table cell by column index."""
@@ -309,6 +332,19 @@ class UserProfilePage(BasePage):
     # Label-based extraction (profile cards)
     # ------------------------------------------------------------------
 
+    async def _extract_value_by_labels(self, *labels: str) -> str:
+        """Try multiple labels (English/Turkish) and return first match."""
+        for label in labels:
+            value = await self._extract_value_by_label(label)
+            if value and value != "-" and value != "0":
+                return value
+        # Second pass: accept "0" or "-" if nothing better
+        for label in labels:
+            value = await self._extract_value_by_label(label)
+            if value:
+                return value
+        return ""
+
     async def _extract_value_by_label(self, label: str) -> str:
         """Extract the value next to a label on the profile page."""
         try:
@@ -328,18 +364,19 @@ class UserProfilePage(BasePage):
             return ""
 
     async def _extract_aktif_bonus(self) -> str:
-        """Extract active bonus name from the Aktif Bonus section."""
-        try:
-            section = self.page.get_by_text("Aktif Bonus", exact=False).first
-            if await section.count() > 0:
-                parent = section.locator("..")
-                text = await parent.text_content() or ""
-                cleaned = text.replace("Aktif Bonus", "").strip()
-                if cleaned and cleaned != "-":
-                    return cleaned.split("\n")[0].strip()
-            return ""
-        except Exception:
-            return ""
+        """Extract active bonus name from the Active Bonus section."""
+        for label in ("Active Bonus", "Aktif Bonus"):
+            try:
+                section = self.page.get_by_text(label, exact=False).first
+                if await section.count() > 0:
+                    parent = section.locator("..")
+                    text = await parent.text_content() or ""
+                    cleaned = text.replace(label, "").strip()
+                    if cleaned and cleaned not in ("-", "None", "No bonus"):
+                        return cleaned.split("\n")[0].strip()
+            except Exception:
+                continue
+        return ""
 
     # ------------------------------------------------------------------
     # Parsers
