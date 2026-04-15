@@ -73,25 +73,40 @@ async def main():
         await asyncio.sleep(3)
         print(f"    Current URL: {page.url}")
 
-        # --- FIND A PENDING ROW ---
-        print("\n[3] Looking for pending rows...")
+        # --- CLICK BEKLEMEDE TAB ---
+        print("\n[3] Clicking 'Beklemede' filter tab...")
+        try:
+            beklemede_tab = page.get_by_text("Beklemede")
+            if await beklemede_tab.count() > 0:
+                await beklemede_tab.first.click()
+                await asyncio.sleep(2)
+                print("    Beklemede tab clicked!")
+            else:
+                print("    Beklemede tab not found, continuing with current view")
+        except Exception as e:
+            print(f"    Tab click error: {e}")
+
+        # --- FIND A ROW (all rows are pending on Beklemede tab) ---
+        print("\n[4] Looking for rows...")
         rows = page.locator("table tbody tr")
         row_count = await rows.count()
         print(f"    Total rows: {row_count}")
 
-        target_row = None
-        for i in range(row_count):
+        # Dump first 3 rows to see structure
+        for i in range(min(row_count, 3)):
             row = rows.nth(i)
-            text = (await row.text_content() or "").lower()
-            if "beklemede" in text:
-                target_row = row
-                row_text = (await row.text_content() or "").strip()
-                print(f"    Found pending row at index {i}: {row_text[:120]}...")
-                break
+            cols = row.locator("td")
+            col_count = await cols.count()
+            print(f"    Row {i} has {col_count} columns:")
+            for j in range(col_count):
+                t = (await cols.nth(j).text_content() or "").strip()
+                print(f"      td[{j}]: {t[:80]}")
 
-        if target_row is None:
-            print("    No pending rows found! Cannot test modal.")
-            await page.screenshot(path="scripts/no_pending_rows.png")
+        target_row = rows.first if row_count > 0 else None
+
+        if target_row is None or row_count == 0:
+            print("    No rows found! Cannot test modal.")
+            await page.screenshot(path="scripts/no_rows.png")
             await browser.close()
             return
 
