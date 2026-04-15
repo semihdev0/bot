@@ -25,6 +25,17 @@ from src.utils.exceptions import ActionExecutionError
 
 logger = structlog.get_logger()
 
+# Broad selectors to detect any modal/dialog overlay
+_MODAL_SELECTORS = ", ".join([
+    "[role='dialog']",
+    "[aria-modal='true']",
+    "dialog[open]",
+    "[data-state='open'][role='dialog']",
+    "[class*='DialogContent']",
+    "[class*='ModalContent']",
+    "[class*='modal-content']",
+])
+
 
 class BonusActionExecutor:
     """Handles approve/reject interactions on Betronix modals."""
@@ -32,6 +43,135 @@ class BonusActionExecutor:
     def __init__(self, page: Page, selectors: SelectorRegistry) -> None:
         self.page = page
         self.selectors = selectors
+
+    # ------------------------------------------------------------------
+    # Modal helpers
+    # ------------------------------------------------------------------
+
+    async def _wait_for_modal(self, timeout_ms: int = 8000) -> Locator | None:
+        """Wait for a modal/dialog to become visible after a button click.
+
+        Tries multiple selector strategies since the Betronix panel may
+        use Radix, Headless UI, shadcn, or custom modal implementations.
+        """
+        modal = self.page.locator(_MODAL_SELECTORS).first
+        try:
+            await modal.wait_for(state="visible", timeout=timeout_ms)
+            logger.debug("modal_detected")
+            return modal
+        except Exception:
+            # Fallback: any fixed/absolute overlay that just appeared
+            fallback_selectors = [
+                "div.fixed[class*='inset']",
+                "div[class*='overlay'] ~ div",
+                "div[class*='Overlay'] ~ div",
+                "[class*='backdrop'] ~ div",
+            ]
+            for sel in fallback_selectors:
+                try:
+                    fb = self.page.locator(sel).first
+                    if await fb.is_visible():
+                        logger.debug("modal_detected_fallback", selector=sel)
+                        return fb
+                except Exception:
+                    continue
+
+            logger.warning("modal_not_detected_using_page_scope")
+            return None
+
+    async def _find_button(
+        self,
+        preferred_texts: list[str],
+        color_classes: list[str] | None = None,
+        modal: Locator | None = None,
+    ) -> Locator | None:
+        """Find a button using cascading strategies.
+
+        Searches within the modal scope if provided, otherwise the full page.
+        Tries: exact text -> partial text -> role -> color class -> submit type.
+        """
+        # Use modal scope when available for precision
+        scope = modal if modal is not None else self.page
+
+        for text in preferred_texts:
+            # Strategy 1: Exact text on a <button>
+            try:
+                btn = scope.get_by_role("button", name=text, exact=True)
+                if await btn.count() > 0:
+                    logger.debug("button_found", strategy="role_exact", text=text)
+                    return btn.first
+            except Exception:
+                pass
+
+            # Strategy 2: Exact text match (any element)
+            try:
+                btn = scope.get_by_text(text, exact=True)
+                if await btn.count() > 0:
+                    logger.debug("button_found", strategy="text_exact", text=text)
+                    return btn.first
+            except Exception:
+                pass
+
+            # Strategy 3: Partial / case-insensitive text on button role
+            try:
+                btn = scope.get_by_role("button", name=text, exact=False)
+                if await btn.count() > 0:
+                    logger.debug("button_found", strategy="role_partial", text=text)
+                    return btn.first
+            except Exception:
+                pass
+
+        # Strategy 4: Color-class based buttons (Tailwind CSS)
+        if color_classes:
+            for cls in color_classes:
+                try:
+                    btn = scope.locator(f"button[class*='{cls}']")
+                    if await btn.count() > 0:
+                        logger.debug("button_found", strategy="color_class", cls=cls)
+                        return btn.first
+                except Exception:
+                    continue
+
+        # Strategy 5: Submit button
+        try:
+            btn = scope.locator("button[type='submit']")
+            if await btn.count() > 0:
+                logger.debug("button_found", strategy="submit_type")
+                return btn.first
+        except Exception:
+            pass
+
+        # If modal scope failed, retry on full page (modal might not contain buttons)
+        if modal is not None:
+            logger.debug("retrying_button_search_on_page")
+            return await self._find_button(preferred_texts, color_classes, modal=None)
+
+        return None
+
+    async def _debug_log_all_buttons(self) -> None:
+        """Log every visible button on the page for debugging."""
+        try:
+            buttons = self.page.locator("button:visible")
+            count = await buttons.count()
+            logger.info("debug_visible_buttons", total=count)
+            for i in range(min(count, 20)):
+                btn = buttons.nth(i)
+                text = (await btn.text_content() or "").strip()
+                cls = (await btn.get_attribute("class") or "")[:100]
+                btn_type = await btn.get_attribute("type") or ""
+                logger.info(
+                    "debug_button",
+                    index=i,
+                    text=text[:60],
+                    type=btn_type,
+                    class_preview=cls,
+                )
+        except Exception as e:
+            logger.warning("debug_log_buttons_failed", error=str(e))
+
+    # ------------------------------------------------------------------
+    # Approve
+    # ------------------------------------------------------------------
 
     async def execute_approve(
         self,
@@ -41,54 +181,41 @@ class BonusActionExecutor:
     ) -> bool:
         """Click approve button and handle the 'Talebi Onayla' modal.
 
-        If decision has a custom bonus_amount, enables "Özel değerler kullan"
+        If decision has a custom bonus_amount, enables "Ozel degerler kullan"
         and fills in the custom amount (and optionally turnover).
         """
         try:
-            # Click the ✓ approve button on the row
+            # Click the approve button on the row
             await approve_button.click()
-            await asyncio.sleep(1)
+            logger.debug("approve_button_clicked", request_id=request_id)
 
-            # Modal should now be open: "Talebi Onayla"
+            # Wait for modal to appear
+            await asyncio.sleep(1)
+            modal = await self._wait_for_modal()
+
             # Check if we need to set custom values
             if decision.bonus_amount is not None and decision.bonus_amount > 0:
-                # Click "Özel değerler kullan" checkbox
-                checkbox = self.page.get_by_text("Özel değerler kullan")
-                if await checkbox.count() > 0:
-                    await checkbox.click()
-                    await asyncio.sleep(0.5)
+                await self._fill_custom_values(
+                    modal, decision.bonus_amount, decision.bonus_turnover, request_id
+                )
 
-                    # Fill custom amount
-                    amount_input = self.page.locator(
-                        "input[type='number']:nth-of-type(1), "
-                        "input[placeholder*='Tutar'], "
-                        "input[name*='amount']"
-                    ).first
-                    if await amount_input.count() > 0:
-                        amount_str = str(int(decision.bonus_amount)) if decision.bonus_amount else "0"
-                        await amount_input.fill(amount_str)
+            # Find and click "Onayla" confirm button
+            confirm_btn = await self._find_button(
+                preferred_texts=["Onayla", "Tamam", "Evet", "Kaydet", "Confirm", "OK"],
+                color_classes=["emerald", "green", "primary", "success"],
+                modal=modal,
+            )
 
-                    # Fill custom turnover if specified
-                    if decision.bonus_turnover is not None:
-                        turnover_input = self.page.locator(
-                            "input[type='number']:nth-of-type(2), "
-                            "input[placeholder*='Çevrim'], "
-                            "input[name*='turnover']"
-                        ).first
-                        if await turnover_input.count() > 0:
-                            await turnover_input.fill(str(decision.bonus_turnover))
+            if confirm_btn is None:
+                logger.error("approve_confirm_button_not_found", request_id=request_id)
+                await self._debug_log_all_buttons()
+                await self._try_close_modal()
+                raise ActionExecutionError(
+                    f"Approve confirm button not found for request {request_id}"
+                )
 
-                    logger.debug(
-                        "custom_values_set",
-                        request_id=request_id,
-                        amount=str(decision.bonus_amount),
-                        turnover=decision.bonus_turnover,
-                    )
-
-            # Click "Onayla" button
-            confirm_btn = self.page.get_by_text("Onayla", exact=True).first
             await confirm_btn.click()
-            await asyncio.sleep(1)
+            await asyncio.sleep(1.5)
 
             logger.info(
                 "bonus_approved",
@@ -98,17 +225,94 @@ class BonusActionExecutor:
             )
             return True
 
+        except ActionExecutionError:
+            raise
         except Exception as e:
-            # Try to close modal if it's still open
             await self._try_close_modal()
-            logger.error(
-                "approve_failed",
-                request_id=request_id,
-                error=str(e),
-            )
+            logger.error("approve_failed", request_id=request_id, error=str(e))
             raise ActionExecutionError(
                 f"Failed to approve {request_id}: {e}"
             ) from e
+
+    async def _fill_custom_values(
+        self,
+        modal: Locator | None,
+        amount: Decimal,
+        turnover: int | None,
+        request_id: str,
+    ) -> None:
+        """Enable custom values checkbox and fill amount/turnover inputs."""
+        scope = modal if modal is not None else self.page
+
+        # Click "Ozel degerler kullan" checkbox
+        checkbox = scope.get_by_text("Özel değerler kullan")
+        if await checkbox.count() > 0:
+            await checkbox.click()
+            await asyncio.sleep(0.5)
+        else:
+            # Try on full page if modal scope missed it
+            checkbox = self.page.get_by_text("Özel değerler kullan")
+            if await checkbox.count() > 0:
+                await checkbox.click()
+                await asyncio.sleep(0.5)
+
+        # Fill custom amount - try multiple selectors
+        amount_str = str(int(amount))
+        amount_filled = False
+        for sel in [
+            "input[placeholder*='Tutar']",
+            "input[name*='amount']",
+            "input[type='number']",
+        ]:
+            try:
+                inp = scope.locator(sel).first
+                if await inp.count() > 0 and await inp.is_visible():
+                    await inp.fill(amount_str)
+                    amount_filled = True
+                    break
+            except Exception:
+                continue
+
+        if not amount_filled:
+            # Fallback: try on page scope
+            for sel in [
+                "input[placeholder*='Tutar']",
+                "input[name*='amount']",
+            ]:
+                try:
+                    inp = self.page.locator(sel).first
+                    if await inp.count() > 0 and await inp.is_visible():
+                        await inp.fill(amount_str)
+                        amount_filled = True
+                        break
+                except Exception:
+                    continue
+
+        # Fill custom turnover if specified
+        if turnover is not None:
+            for sel in [
+                "input[placeholder*='Çevrim']",
+                "input[name*='turnover']",
+            ]:
+                try:
+                    inp = scope.locator(sel).first
+                    if await inp.count() > 0 and await inp.is_visible():
+                        await inp.fill(str(turnover))
+                        break
+                except Exception:
+                    continue
+
+        logger.debug(
+            "custom_values_set",
+            request_id=request_id,
+            amount=amount_str,
+            turnover=turnover,
+            amount_filled=amount_filled,
+        )
+
+    # ------------------------------------------------------------------
+    # Reject
+    # ------------------------------------------------------------------
 
     async def execute_reject(
         self,
@@ -119,37 +323,39 @@ class BonusActionExecutor:
         """Click reject button and handle the rejection modal.
 
         Fills in the rejection reason and confirms.
+        SAFETY: Never falls back to approve if reject button is not found.
         """
         try:
-            # Click the ✗ reject button on the row
+            # Click the reject button on the row
             await reject_button.click()
+            logger.debug("reject_button_clicked", request_id=request_id)
+
+            # Wait for modal to appear
             await asyncio.sleep(1)
+            modal = await self._wait_for_modal()
 
-            # Fill rejection reason if there's an input
+            # Fill rejection reason
             if decision.reject_message:
-                reason_input = self.page.locator(
-                    "textarea, "
-                    "[class*='modal'] input[type='text'], "
-                    "[class*='dialog'] textarea"
-                ).first
-                if await reason_input.count() > 0:
-                    await reason_input.fill(decision.reject_message)
-                    await asyncio.sleep(0.5)
+                await self._fill_reject_reason(modal, decision.reject_message)
 
-            # Click "Reddet" confirm button
-            confirm_btn = self.page.get_by_text("Reddet", exact=True).first
-            if await confirm_btn.count() > 0:
-                await confirm_btn.click()
-            else:
-                # SAFETY: Never fall back to "Onayla" for a reject action.
-                # If "Reddet" button is missing, abort to avoid accidental approval.
+            # Find and click "Reddet" confirm button
+            confirm_btn = await self._find_button(
+                preferred_texts=["Reddet", "Evet", "Tamam", "Onayla", "Kaydet", "Confirm", "Reject"],
+                color_classes=["red", "danger", "destructive", "rose"],
+                modal=modal,
+            )
+
+            if confirm_btn is None:
+                logger.error("reject_confirm_button_not_found", request_id=request_id)
+                await self._debug_log_all_buttons()
                 await self._try_close_modal()
                 raise ActionExecutionError(
                     f"Reddet button not found for request {request_id} - "
                     "aborting to prevent accidental approval"
                 )
 
-            await asyncio.sleep(1)
+            await confirm_btn.click()
+            await asyncio.sleep(1.5)
 
             logger.info(
                 "bonus_rejected",
@@ -158,31 +364,81 @@ class BonusActionExecutor:
             )
             return True
 
+        except ActionExecutionError:
+            raise
         except Exception as e:
             await self._try_close_modal()
-            logger.error(
-                "reject_failed",
-                request_id=request_id,
-                error=str(e),
-            )
+            logger.error("reject_failed", request_id=request_id, error=str(e))
             raise ActionExecutionError(
                 f"Failed to reject {request_id}: {e}"
             ) from e
 
+    async def _fill_reject_reason(
+        self, modal: Locator | None, message: str
+    ) -> None:
+        """Fill the rejection reason into the modal's textarea or input."""
+        scope = modal if modal is not None else self.page
+
+        # Try textarea first (most common for rejection reasons)
+        for sel in [
+            "textarea",
+            "input[type='text']",
+            "[contenteditable='true']",
+        ]:
+            try:
+                inp = scope.locator(sel).first
+                if await inp.count() > 0 and await inp.is_visible():
+                    await inp.fill(message)
+                    await asyncio.sleep(0.5)
+                    logger.debug("reject_reason_filled", selector=sel)
+                    return
+            except Exception:
+                continue
+
+        # Fallback: try on full page
+        for sel in ["textarea", "input[type='text']"]:
+            try:
+                inp = self.page.locator(sel).first
+                if await inp.count() > 0 and await inp.is_visible():
+                    await inp.fill(message)
+                    await asyncio.sleep(0.5)
+                    logger.debug("reject_reason_filled_fallback", selector=sel)
+                    return
+            except Exception:
+                continue
+
+        logger.warning("reject_reason_input_not_found")
+
+    # ------------------------------------------------------------------
+    # Recovery
+    # ------------------------------------------------------------------
+
     async def _try_close_modal(self) -> None:
         """Try to close any open modal to recover from errors."""
         try:
-            # Try clicking İptal
+            # Try clicking "Iptal" (Cancel)
             cancel = self.page.get_by_text("İptal", exact=True).first
             if await cancel.count() > 0:
                 await cancel.click()
+                await asyncio.sleep(0.5)
                 return
+
             # Try clicking X close button
-            close = self.page.locator("[class*='modal'] button[class*='close']").first
-            if await close.count() > 0:
-                await close.click()
-                return
-            # Press Escape
+            for sel in [
+                "[class*='modal'] button[class*='close']",
+                "[role='dialog'] button[class*='close']",
+                "button[aria-label='Close']",
+                "button[aria-label='Kapat']",
+                "[class*='DialogClose']",
+            ]:
+                close = self.page.locator(sel).first
+                if await close.count() > 0:
+                    await close.click()
+                    await asyncio.sleep(0.5)
+                    return
+
+            # Press Escape as last resort
             await self.page.keyboard.press("Escape")
+            await asyncio.sleep(0.5)
         except Exception:
             pass
