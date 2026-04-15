@@ -420,8 +420,18 @@ class BonusProcessor:
             if success:
                 self._stats["approved"] += 1
         else:
+            reject_btn = action_buttons.get("reject")
+            if reject_btn is None:
+                logger.error(
+                    "reject_button_not_available",
+                    request_id=request.request_id,
+                    hint="Only 1 action button found in row - cannot reject safely",
+                )
+                raise ActionExecutionError(
+                    f"Reject button not available for {request.request_id}"
+                )
             success = await executor.execute_reject(
-                action_buttons["reject"], decision, request.request_id
+                reject_btn, decision, request.request_id
             )
             if success:
                 self._stats["rejected"] += 1

@@ -484,19 +484,29 @@ class BonusListPage(BasePage):
                 "view": row.locator("td:last-child button").nth(2),
             }
 
-        # Strategy 2: find all buttons in the last cell by position
-        last_cell_buttons = row.locator("td:last-child button")
+        # Strategy 2: find all clickable elements in the last cell by position
+        # Some panels use <button>, others use <a> or <div role="button">
+        last_cell_buttons = row.locator(
+            "td:last-child button, td:last-child a[role='button'], "
+            "td:last-child [role='button']"
+        )
         btn_count = await last_cell_buttons.count()
+
+        if btn_count == 0:
+            # Try just buttons in last cell
+            last_cell_buttons = row.locator("td:last-child button")
+            btn_count = await last_cell_buttons.count()
+
+        if btn_count == 0:
+            # Try broader: last 2 cells
+            last_cell_buttons = row.locator("td:nth-last-child(-n+2) button")
+            btn_count = await last_cell_buttons.count()
+
         logger.info(
             "action_buttons_fallback",
             request_id=request_id,
             button_count=btn_count,
         )
-
-        if btn_count == 0:
-            # Try broader: any button in the row's last few cells
-            last_cell_buttons = row.locator("td:nth-last-child(-n+2) button")
-            btn_count = await last_cell_buttons.count()
 
         if btn_count == 0:
             # Debug: log what's actually in the last cell
@@ -513,24 +523,33 @@ class BonusListPage(BasePage):
                 pass
             return None
 
-        # Typical order: approve (green/check), reject (red/x), view (eye)
-        result = {
-            "approve": last_cell_buttons.nth(0),
-            "reject": last_cell_buttons.nth(1) if btn_count > 1 else last_cell_buttons.nth(0),
-            "view": last_cell_buttons.nth(2) if btn_count > 2 else last_cell_buttons.nth(0),
-        }
-
-        # Debug: log button classes for future selector tuning
-        for i in range(min(btn_count, 3)):
+        # Debug: log button details for selector tuning
+        for i in range(min(btn_count, 4)):
             try:
-                cls = await last_cell_buttons.nth(i).get_attribute("class") or ""
-                logger.debug(
+                btn = last_cell_buttons.nth(i)
+                cls = await btn.get_attribute("class") or ""
+                variant = await btn.get_attribute("data-variant") or ""
+                tag = await btn.evaluate("e => e.tagName") or ""
+                inner = (await btn.text_content() or "").strip()[:20]
+                logger.info(
                     "action_button_discovered",
                     index=i,
-                    class_preview=cls[:100],
+                    tag=tag,
+                    variant=variant,
+                    text=inner,
+                    class_preview=cls[:120],
                 )
             except Exception:
                 pass
+
+        # Typical order: approve (green/check), reject (red/x), view (eye)
+        # SAFETY: Never assign the same button for both approve and reject.
+        # If only 1 button exists, set reject to None to prevent accidental approve.
+        result = {
+            "approve": last_cell_buttons.nth(0),
+            "reject": last_cell_buttons.nth(1) if btn_count >= 2 else None,
+            "view": last_cell_buttons.nth(2) if btn_count >= 3 else None,
+        }
 
         return result
 

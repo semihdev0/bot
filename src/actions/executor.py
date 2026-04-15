@@ -121,16 +121,30 @@ class BonusActionExecutor:
             except Exception:
                 pass
 
-        # Strategy 4: Color-class based buttons (Tailwind CSS)
+        # Strategy 4: data-variant attribute (shadcn/Radix UI)
         if color_classes:
             for cls in color_classes:
                 try:
-                    btn = scope.locator(f"button[class*='{cls}']")
+                    btn = scope.locator(f"button[data-variant='{cls}']")
                     if await btn.count() > 0:
-                        logger.debug("button_found", strategy="color_class", cls=cls)
+                        logger.debug("button_found", strategy="data_variant", cls=cls)
                         return btn.first
                 except Exception:
                     continue
+
+        # Strategy 4b: Color-class based buttons (avoid matching Tailwind utilities
+        # like 'aria-invalid:ring-destructive' by checking the class starts or
+        # contains a direct color token like 'bg-red' or 'text-red')
+        if color_classes:
+            for cls in color_classes:
+                for pattern in [f"bg-{cls}", f"text-{cls}", f"border-{cls}"]:
+                    try:
+                        btn = scope.locator(f"button[class*='{pattern}']")
+                        if await btn.count() > 0:
+                            logger.debug("button_found", strategy="color_class", cls=pattern)
+                            return btn.first
+                    except Exception:
+                        continue
 
         # Strategy 5: Submit button
         try:
