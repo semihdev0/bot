@@ -379,7 +379,7 @@ bonus_types:
   # ============================================================
   # 8. Çevrimsiz 2X Yap 5X Çek (direkt onay)
   # ============================================================
-  cevirmsiz_2x_yap_5x_cek:
+  cevrimsiz_2x_yap_5x_cek:
     display_name: "Çevrimsiz 2X Yap 5X Çek"
     default_action: approve
     default_reject_message_key: "genel_uygun_degil"

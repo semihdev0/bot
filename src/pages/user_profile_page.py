@@ -33,9 +33,9 @@ from src.pages.base import BasePage
 
 logger = structlog.get_logger()
 
-# Successful deposit/withdrawal status keywords (Turkish)
-_SUCCESS_KEYWORDS = ("tamamlan", "başarılı", "onaylan", "completed", "success")
-_FAILED_KEYWORDS = ("başarısız", "iptal", "reddedil", "failed", "cancelled")
+# Successful deposit/withdrawal status keywords (English + Turkish)
+_SUCCESS_KEYWORDS = ("completed", "success", "tamamlan", "başarılı", "onaylan")
+_FAILED_KEYWORDS = ("rejected", "cancelled", "failed", "başarısız", "iptal", "reddedil")
 
 
 class UserProfilePage(BasePage):
@@ -446,12 +446,29 @@ class UserProfilePage(BasePage):
     def _parse_date(text: str) -> datetime | None:
         """Parse date from Betronix format.
 
-        Formats seen: '07/01 14:31\\n07.01.2026 14:31', '25/03 12:09\\n25.03.2026 12:09'
-        Also: '07/01/2026 14:31', '07.01.2026 14:31'
+        Profile cards show: '6h ago 15.04.2026 17:00' or '03/25, 03:17 PM 25.03.2026 15:17'
+        We extract the dd.mm.YYYY HH:MM pattern wherever it appears.
         """
         if not text or text.strip() in ("", "-"):
             return None
 
+        # Try to find a dd.mm.YYYY HH:MM pattern anywhere in the text
+        date_match = re.search(r"(\d{2}\.\d{2}\.\d{4}\s+\d{2}:\d{2})", text)
+        if date_match:
+            try:
+                return datetime.strptime(date_match.group(1), "%d.%m.%Y %H:%M")
+            except ValueError:
+                pass
+
+        # Try to find dd/mm/YYYY HH:MM pattern
+        date_match = re.search(r"(\d{2}/\d{2}/\d{4}\s+\d{2}:\d{2})", text)
+        if date_match:
+            try:
+                return datetime.strptime(date_match.group(1), "%d/%m/%Y %H:%M")
+            except ValueError:
+                pass
+
+        # Fallback: try each line with multiple formats
         for fmt in (
             "%d.%m.%Y %H:%M",
             "%d.%m.%Y %H:%M:%S",

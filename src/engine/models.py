@@ -285,7 +285,8 @@ class UserProfile(BaseModel):
     @property
     def aktif_bonus_var(self) -> bool:
         """Whether the user has an active bonus."""
-        return bool(self.aktif_bonus and self.aktif_bonus.strip() not in ("", "-"))
+        val = self.aktif_bonus.strip().lower() if self.aktif_bonus else ""
+        return bool(val and val not in ("", "-", "none", "no bonus", "no bonus used"))
 
     # --- Deposit-derived fields ---
 

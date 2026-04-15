@@ -220,7 +220,7 @@ class BonusProcessor:
     # Bonus types that are auto-approved without profile checks
     DIRECT_APPROVE_TYPES = frozenset({
         "spor_kayip_bonusu",
-        "cevirmsiz_2x_yap_5x_cek",
+        "cevrimsiz_2x_yap_5x_cek",
     })
 
     async def _process_single_request(
