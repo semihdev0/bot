@@ -26,7 +26,7 @@ SyslogIdentifier=bonus-bot
 # Security hardening
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/home/user/bot
+ReadWritePaths=/home/user/bot /home/user/.cache
 PrivateTmp=true
 
 # Resource limits
