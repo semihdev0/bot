@@ -111,13 +111,12 @@ def evaluate(
     type_config = rules_config.bonus_types.get(bonus_type_key)
 
     # Partial match: if exact key not found, try to find a config key
-    # that is contained within the generated key or vice versa.
-    # e.g. "ilk_kaybiniza_ozel_nakit_iade_bonusu_kayip" matches
-    #      "ilk_kaybiniza_ozel_nakit_iade_bonusu" config key.
+    # that matches via substring or shared words.
     if type_config is None:
         for config_key in rules_config.bonus_types:
             if config_key.startswith("_"):
                 continue
+            # Strategy 1: substring match
             if config_key in bonus_type_key or bonus_type_key in config_key:
                 type_config = rules_config.bonus_types[config_key]
                 logger.info(
@@ -126,6 +125,23 @@ def evaluate(
                     matched_config_key=config_key,
                 )
                 break
+            # Strategy 2: word-based match (handles different word order)
+            # If all words from config_key exist in bonus_type_key or vice versa
+            config_words = set(config_key.split("_"))
+            bonus_words = set(bonus_type_key.split("_"))
+            if config_words and bonus_words:
+                overlap = config_words & bonus_words
+                # Match if 80%+ of words overlap
+                max_len = max(len(config_words), len(bonus_words))
+                if len(overlap) / max_len >= 0.8:
+                    type_config = rules_config.bonus_types[config_key]
+                    logger.info(
+                        "word_match",
+                        original_key=bonus_type_key,
+                        matched_config_key=config_key,
+                        overlap=overlap,
+                    )
+                    break
 
     if type_config is None:
         logger.warning(

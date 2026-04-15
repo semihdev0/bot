@@ -317,6 +317,7 @@ class BonusProcessor:
     DIRECT_APPROVE_TYPES = frozenset({
         "spor_kayip_bonusu",
         "cevrimsiz_2x_yap_5x_cek",
+        "2x_yap_5x_cek_cevrimsiz",
     })
 
     async def _process_single_request(
