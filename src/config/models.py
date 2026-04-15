@@ -33,6 +33,7 @@ class PollingConfig(BaseModel):
     interval_seconds: int = 60
     max_requests_per_cycle: int = 50
     pause_on_empty_seconds: int = 120
+    notification_timeout_seconds: int = 300  # Max wait for toast before safety reload
 
 
 class SessionConfig(BaseModel):

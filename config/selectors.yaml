@@ -19,6 +19,10 @@ login_page:
 
 bonus_list_page:
   # Bonus Talepleri tablosu - /bonus-requests
+  # Sağ alt köşede beliren "Yeni Bonus Talebi" bildirimi
+  new_request_notification:
+    strategy: css
+    value: "[class*='toast'], [class*='notification'], [class*='alert'], [class*='snackbar'], [class*='Toastify'], [role='alert']"
   # Filtre sekmeleri
   pending_filter:
     strategy: text

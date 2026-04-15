@@ -60,27 +60,10 @@ async def main() -> None:
                 # Ensure we have a valid session
                 page = await session.ensure_logged_in()
 
-                # Process pending requests
+                # Run the notification-driven processing loop.
+                # This blocks until the session expires or an error occurs.
                 processor = BonusProcessor(page, config)
-                count = await processor.process_pending_requests()
-
-                # Decide sleep duration
-                if count == 0:
-                    sleep_time = config.settings.polling.pause_on_empty_seconds
-                else:
-                    sleep_time = config.settings.polling.interval_seconds
-
-                logger.info(
-                    "cycle_sleeping",
-                    processed=count,
-                    sleep_seconds=sleep_time,
-                )
-
-                # Sleep with shutdown check
-                for _ in range(sleep_time):
-                    if _shutdown:
-                        break
-                    await asyncio.sleep(1)
+                await processor.run_notification_loop()
 
             except SessionExpiredError:
                 logger.warning("session_expired_relogging")

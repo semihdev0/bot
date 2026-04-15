@@ -64,19 +64,60 @@ class BonusProcessor:
             json.dumps(ids_list, ensure_ascii=False), encoding="utf-8"
         )
 
-    async def process_pending_requests(self) -> int:
-        """Main processing cycle. Returns number of requests processed."""
-        self._stats = {"processed": 0, "approved": 0, "rejected": 0, "errors": 0}
+    async def run_notification_loop(self) -> None:
+        """Main loop: wait for notification → reload → process → repeat.
+
+        Instead of polling the page at intervals, we stay on the bonus
+        list page and watch for the 'Yeni Bonus Talebi' toast that the
+        backoffice pushes in the bottom-right corner.  Only when this
+        notification appears do we reload and process.
+        """
         settings = self.config.settings
         base_url = self.config.credentials.url
 
-        # Step 1: Navigate to bonus requests list
+        # Navigate to the bonus list once
         bonus_list = BonusListPage(self.page, self.config.selectors)
         await bonus_list.navigate_to_list(
             base_url, settings.backoffice.bonus_list_path
         )
 
-        # Step 2: Extract pending requests
+        # Process any already-pending requests on first load
+        await self._process_all_pending(bonus_list, base_url)
+
+        # Enter the notification-driven loop
+        while True:
+            logger.info("waiting_for_notification")
+            write_heartbeat(status="healthy", **self._stats)
+
+            # Block until a toast appears (or timeout)
+            got_notification = await bonus_list.wait_for_notification(
+                timeout_seconds=settings.polling.notification_timeout_seconds,
+            )
+
+            if got_notification:
+                # Reload the page so the new request appears in the table
+                await bonus_list.reload_page()
+                await self._process_all_pending(bonus_list, base_url)
+
+                # Drain: if more notifications arrived while we were
+                # processing, reload and process again immediately
+                while await bonus_list.has_pending_notification():
+                    logger.info("additional_notification_detected")
+                    await bonus_list.reload_page()
+                    await self._process_all_pending(bonus_list, base_url)
+            else:
+                # Timeout – do a safety reload to catch anything missed
+                logger.debug("notification_timeout_safety_reload")
+                await bonus_list.reload_page()
+                await self._process_all_pending(bonus_list, base_url)
+
+    async def _process_all_pending(
+        self, bonus_list: BonusListPage, base_url: str
+    ) -> int:
+        """Extract and process every pending request on the current page."""
+        self._stats = {"processed": 0, "approved": 0, "rejected": 0, "errors": 0}
+        settings = self.config.settings
+
         requests = await bonus_list.get_pending_requests(
             max_count=settings.polling.max_requests_per_cycle
         )
@@ -88,7 +129,6 @@ class BonusProcessor:
 
         logger.info("pending_requests_found", count=len(requests))
 
-        # Step 3: Process each request
         for i, request in enumerate(requests):
             if request.request_id in self._processed_ids:
                 logger.debug("request_already_processed", request_id=request.request_id)
@@ -131,7 +171,14 @@ class BonusProcessor:
         base_url: str,
         bonus_list: BonusListPage,
     ) -> None:
-        """Process a single bonus request end-to-end."""
+        """Process a single bonus request end-to-end.
+
+        IMPORTANT: After navigating to a user profile and back, the
+        table row order may have changed (new requests inserted by
+        other users).  We always re-find the row by its unique
+        request_id (#ID) instead of using the original row_index,
+        so we never approve/reject the wrong request.
+        """
         logger.info(
             "processing_request",
             request_id=request.request_id,
@@ -190,9 +237,20 @@ class BonusProcessor:
             bonus_turnover=decision.bonus_turnover,
         )
 
-        # Step 5: Find the row again and get action buttons
+        # Step 5: Find the row by request_id (NOT by index – table may have changed)
         await asyncio.sleep(1)
-        action_buttons = await bonus_list.get_row_action_buttons(row_index)
+        action_buttons = await bonus_list.get_row_action_buttons_by_id(
+            request.request_id
+        )
+
+        if action_buttons is None:
+            logger.error(
+                "row_not_found_after_return",
+                request_id=request.request_id,
+            )
+            raise ActionExecutionError(
+                f"Row for request #{request.request_id} not found in table"
+            )
 
         # Step 6: Execute the decision
         executor = BonusActionExecutor(self.page, self.config.selectors)

@@ -18,12 +18,75 @@ logger = structlog.get_logger()
 class BonusListPage(BasePage):
     page_name = "bonus_list_page"
 
+    # Keywords that indicate a new bonus request notification
+    _NOTIFICATION_KEYWORDS = ("yeni bonus", "bonus talebi", "new bonus")
+
     async def navigate_to_list(self, base_url: str, path: str) -> None:
         """Navigate to the bonus requests list page."""
         url = f"{base_url.rstrip('/')}{path}"
         await self.navigate(url)
         await asyncio.sleep(2)  # Wait for table to load
         logger.info("bonus_list_loaded", url=url)
+
+    async def wait_for_notification(self, timeout_seconds: int = 300) -> bool:
+        """Wait for a 'Yeni Bonus Talebi' toast notification to appear.
+
+        The backoffice pushes a toast to the bottom-right corner whenever
+        a new bonus request is submitted. Instead of polling, we watch
+        for this DOM element and only refresh when it appears.
+
+        Returns True if a notification was detected, False on timeout.
+        """
+        timeout_ms = timeout_seconds * 1000
+        notification_sel = self.selectors.get(self.page_name, "new_request_notification")
+
+        logger.debug("waiting_for_notification", timeout_seconds=timeout_seconds)
+
+        try:
+            # Wait for any toast/notification container to appear
+            locator = self._to_locator(notification_sel)
+            await locator.first.wait_for(state="visible", timeout=timeout_ms)
+
+            # Verify it's actually a bonus notification by checking text
+            text = (await locator.first.text_content() or "").lower()
+            is_bonus = any(kw in text for kw in self._NOTIFICATION_KEYWORDS)
+
+            if is_bonus:
+                logger.info("bonus_notification_detected", text=text.strip()[:80])
+                return True
+
+            # It's some other notification, not a bonus one
+            logger.debug("non_bonus_notification", text=text.strip()[:80])
+            return False
+
+        except Exception:
+            # Timeout or element not found
+            logger.debug("notification_wait_timeout", timeout_seconds=timeout_seconds)
+            return False
+
+    async def reload_page(self) -> None:
+        """Reload the current page to reflect new requests."""
+        await self.page.reload(wait_until="domcontentloaded")
+        await asyncio.sleep(2)  # Wait for table to re-render
+        logger.info("page_reloaded")
+
+    async def has_pending_notification(self) -> bool:
+        """Quick check if a notification is currently visible (non-blocking).
+
+        Used after processing to detect notifications that arrived
+        while previous requests were being handled.
+        """
+        try:
+            notification_sel = self.selectors.get(
+                self.page_name, "new_request_notification"
+            )
+            locator = self._to_locator(notification_sel)
+            if await locator.first.is_visible():
+                text = (await locator.first.text_content() or "").lower()
+                return any(kw in text for kw in self._NOTIFICATION_KEYWORDS)
+        except Exception:
+            pass
+        return False
 
     async def get_pending_requests(self, max_count: int = 50) -> list[BonusRequest]:
         """Extract pending bonus requests from the Betronix table.
@@ -154,8 +217,56 @@ class BonusListPage(BasePage):
         # Lowercase, replace spaces with underscore
         return re.sub(r"\s+", "_", cleaned.strip().lower())
 
+    async def find_row_by_request_id(self, request_id: str) -> Locator | None:
+        """Find a table row by its request ID (#1234...) text.
+
+        After navigating to a user profile and back, the row order may
+        have changed (new requests inserted).  Instead of relying on a
+        stale row index we search every row for the matching #ID.
+        """
+        rows_locator = self.locate("request_rows")
+        count = await rows_locator.count()
+
+        for i in range(count):
+            row = rows_locator.nth(i)
+            text = await row.text_content() or ""
+            if f"#{request_id}" in text:
+                logger.debug("row_found_by_id", request_id=request_id, row_index=i)
+                return row
+
+        logger.warning("row_not_found_by_id", request_id=request_id)
+        return None
+
+    async def get_row_action_buttons_by_id(
+        self, request_id: str
+    ) -> dict[str, Locator] | None:
+        """Get action buttons for a row identified by its request ID.
+
+        This is safe against table reordering – it always finds the
+        correct row regardless of new inserts or removals.
+        """
+        row = await self.find_row_by_request_id(request_id)
+        if row is None:
+            return None
+
+        approve_sel = self.selectors.get_nested(
+            self.page_name, "row_actions", "approve_button"
+        )
+        reject_sel = self.selectors.get_nested(
+            self.page_name, "row_actions", "reject_button"
+        )
+        view_sel = self.selectors.get_nested(
+            self.page_name, "row_actions", "view_button"
+        )
+
+        return {
+            "approve": row.locator(approve_sel.value).first,
+            "reject": row.locator(reject_sel.value).first,
+            "view": row.locator(view_sel.value).first,
+        }
+
     async def get_row_action_buttons(self, row_index: int) -> dict[str, Locator]:
-        """Get the approve/reject/view action button locators for a row."""
+        """Get action buttons by row index (legacy fallback)."""
         rows_locator = self.locate("request_rows")
         row = rows_locator.nth(row_index)
 
