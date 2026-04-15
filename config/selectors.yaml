@@ -64,13 +64,13 @@ bonus_list_page:
   row_actions:
     approve_button:
       strategy: css
-      value: "button[class*='success'], button[class*='approve'], button[class*='check'], [class*='action'] button:nth-child(1)"
+      value: "td:last-child button[class*='emerald']"
     reject_button:
       strategy: css
-      value: "button[class*='danger'], button[class*='reject'], button[class*='close'], [class*='action'] button:nth-child(2)"
+      value: "td:last-child button[class*='red']"
     view_button:
       strategy: css
-      value: "button[class*='eye'], button[class*='view'], button[class*='detail'], [class*='action'] button:nth-child(3)"
+      value: "td:last-child button:nth-child(3)"
   # Sayfalama kontrolleri (sol alt)
   pagination:
     # "Son sayfa" (>>) veya "İleri" (>) butonları
