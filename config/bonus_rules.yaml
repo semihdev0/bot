@@ -32,14 +32,6 @@ bonus_types:
     default_action: reject
     default_reject_message_key: "ilk_kayip_genel_ret"
     rules:
-      - name: "Aktif bonus mevcut"
-        conditions:
-          - field: "aktif_bonus_var"
-            operator: "=="
-            value: true
-        action: reject
-        reject_message_key: "aktif_bonus_mevcut"
-
       - name: "Hiç yatırım yok"
         conditions:
           - field: "basarili_yatirim_var"
@@ -90,9 +82,6 @@ bonus_types:
 
       - name: "İlk yatırım kayıp - onay"
         conditions:
-          - field: "aktif_bonus_var"
-            operator: "=="
-            value: false
           - field: "yatirim_sayisi"
             operator: "=="
             value: 1
