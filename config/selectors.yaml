@@ -6,13 +6,13 @@ login_page:
   # Giriş formu sırası: Company ID -> Username -> Password -> Sign In
   company_code_input:
     strategy: css
-    value: "input[placeholder*='Company'], input[name*='company'], form input:nth-of-type(1)"
+    value: "input[name='companyId']"
   username_input:
     strategy: css
-    value: "input[placeholder*='Username'], input[name*='username'], form input:nth-of-type(2)"
+    value: "input[name='username']"
   password_input:
     strategy: css
-    value: "input[type='password']"
+    value: "input[name='password']"
   login_button:
     strategy: text
     value: "Sign In"
