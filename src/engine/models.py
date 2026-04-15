@@ -290,7 +290,17 @@ class UserProfile(BaseModel):
     @computed_field
     @property
     def aktif_bonus_var(self) -> bool:
-        """Whether the user has an active bonus."""
+        """Whether the user has an active bonus.
+
+        Primary: checks bonus_history entries for 'Aktif'/'Active' status.
+        Fallback: checks aktif_bonus string field.
+        """
+        # Primary: check bonus history entries
+        for entry in self.bonus_history.entries:
+            s = _tr_lower(entry.status)
+            if s in ("aktif", "active"):
+                return True
+        # Fallback: check string field (set from bonus_history in extract_profile)
         val = self.aktif_bonus.strip().lower() if self.aktif_bonus else ""
         return bool(val and val not in ("", "-", "none", "no bonus", "no bonus used"))
 

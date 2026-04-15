@@ -28,6 +28,7 @@ from src.engine.models import (
     UserProfile,
     WithdrawalEntry,
     WithdrawalHistory,
+    _tr_lower,
 )
 from src.pages.base import BasePage
 
@@ -129,12 +130,6 @@ class UserProfilePage(BasePage):
         durum = card.get("durum", "")
         kayit_tarihi_raw = card.get("kayit_tarihi", "")
         son_giris_raw = card.get("son_giris", "")
-        aktif_bonus = card.get("aktif_bonus", "")
-
-        # Clean up aktif_bonus
-        if aktif_bonus.strip().lower() in ("", "-", "none", "no bonus", "no bonus used"):
-            aktif_bonus = ""
-
         logger.info(
             "profile_raw_values",
             user_id=user_id,
@@ -143,7 +138,6 @@ class UserProfilePage(BasePage):
             durum=durum[:30] if durum else "EMPTY",
             yatirim_sayisi=yatirim_sayisi_raw[:30] if yatirim_sayisi_raw else "",
             son_yatirim=son_yatirim_raw[:30] if son_yatirim_raw else "",
-            aktif_bonus=aktif_bonus[:30] if aktif_bonus else "",
         )
 
         # --- Tab Data: Yatırımlar, Çekimler, Bonuslar ---
@@ -151,6 +145,20 @@ class UserProfilePage(BasePage):
         son_yatirim_tutari = self._get_last_successful_amount(deposits)
         withdrawals = await self._extract_withdrawal_history()
         bonus_history = await self._extract_bonus_history()
+
+        # Determine aktif_bonus from bonus history tab (not from card label)
+        # Look for any bonus entry with status "Aktif"/"Active"
+        aktif_bonus = ""
+        for entry in bonus_history.entries:
+            status_lower = _tr_lower(entry.status)
+            if status_lower in ("aktif", "active"):
+                aktif_bonus = entry.bonus_name
+                logger.info(
+                    "aktif_bonus_from_history",
+                    bonus_name=entry.bonus_name,
+                    status=entry.status,
+                )
+                break
 
         profile = UserProfile(
             user_id=user_id,
@@ -441,8 +449,6 @@ class UserProfilePage(BasePage):
         "Son Giriş": "son_giris",
         "Last Login": "son_giris",
         "Last Sign In": "son_giris",
-        "Aktif Bonus": "aktif_bonus",
-        "Active Bonus": "aktif_bonus",
     }
 
     _EXTRACT_CARDS_JS = """(labels) => {
