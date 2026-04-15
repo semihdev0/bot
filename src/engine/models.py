@@ -114,6 +114,16 @@ class DepositHistory(BaseModel):
             Decimal("0"),
         )
 
+    def min_amount_last_hours(self, hours: int) -> Decimal:
+        """Minimum deposit amount among successful deposits in the last N hours.
+
+        Returns 0 if no qualifying deposits.
+        """
+        deposits = self.get_successful_last_hours(hours)
+        if not deposits:
+            return Decimal("0")
+        return min(e.amount for e in deposits)
+
     @property
     def has_any_successful(self) -> bool:
         return len(self.get_successful()) > 0
@@ -296,6 +306,18 @@ class UserProfile(BaseModel):
     def son_5_saat_yatirim_var(self) -> bool:
         """Whether there's a successful deposit in the last 5 hours."""
         return len(self.deposits.get_successful_last_hours(5)) > 0
+
+    @computed_field
+    @property
+    def son_36_saat_yatirim_sayisi(self) -> int:
+        """Count of successful deposits in the last 36 hours."""
+        return len(self.deposits.get_successful_last_hours(36))
+
+    @computed_field
+    @property
+    def son_36_saat_en_dusuk_yatirim(self) -> Decimal:
+        """Minimum deposit amount among successful deposits in the last 36 hours."""
+        return self.deposits.min_amount_last_hours(36)
 
     @computed_field
     @property

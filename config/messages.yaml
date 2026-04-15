@@ -91,6 +91,20 @@ rejection_messages:
     Son 7 gün içerisinde çekiminiz yatırımınızdan yüksek olduğundan
     dolayı kaybınız bulunmamaktadır. Bol kazançlar dileriz!
 
+  # --- %50 Nakit Jest Bonusu ---
+  nakit_jest_genel_ret: >-
+    Nakit jest bonusu talebiniz incelenmiş olup mevcut koşulları
+    karşılamamaktadır.
+
+  nakit_jest_yatirim_yok: >-
+    Bu bonustan yararlanmak için öncelikle yatırım yapmanız
+    gerekmektedir. Ferrari Casino Bol kazançlar diler.
+
+  nakit_jest_yetersiz_yatirim: >-
+    Bu bonustan yararlanmak için son 36 saat içerisinde en az 4 adet
+    başarılı yatırımınızın bulunması gerekmektedir. Bol kazançlar
+    dileriz!
+
   # --- %15 Kripto Yatırım Bonusu ---
   kripto_yatirim_yok: >-
     Kripto yatırım yöntemi ile yatırımınız bulunmamaktadır. Lütfen kripto

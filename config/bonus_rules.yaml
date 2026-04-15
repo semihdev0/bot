@@ -11,6 +11,7 @@
 #   basarili_yatirim_var, son_24_saat_yatirim_var, son_5_saat_yatirim_var,
 #   kripto_yatirim_var, son_kripto_yatirim_tutari,
 #   son_7_gun_yatirim_toplami, son_7_gun_cekim_toplami, son_7_gun_net_kayip,
+#   son_36_saat_yatirim_sayisi, son_36_saat_en_dusuk_yatirim,
 #   hosgeldin_onay_sayisi, son_yatirimdan_sonra_ilk_kayip_var,
 #   son_kullanilan_bonus, durum, aktif_bonus
 #
@@ -331,7 +332,43 @@ bonus_types:
           turnover: 1
 
   # ============================================================
-  # 6. %20 Spor Kayıp Bonusu (direkt onay)
+  # 6. %50 Nakit Jest Bonusu
+  # ============================================================
+  nakit_jest_bonusu:
+    display_name: "%50 Nakit Jest Bonusu"
+    default_action: reject
+    default_reject_message_key: "nakit_jest_genel_ret"
+    rules:
+      - name: "Hiç yatırım yok"
+        conditions:
+          - field: "basarili_yatirim_var"
+            operator: "=="
+            value: false
+        action: reject
+        reject_message_key: "nakit_jest_yatirim_yok"
+
+      - name: "36 saatte 4 yatırım yok"
+        conditions:
+          - field: "son_36_saat_yatirim_sayisi"
+            operator: "<"
+            value: 4
+        action: reject
+        reject_message_key: "nakit_jest_yetersiz_yatirim"
+
+      - name: "Nakit jest onay - 4+ yatırım"
+        conditions:
+          - field: "son_36_saat_yatirim_sayisi"
+            operator: ">="
+            value: 4
+        action: approve
+        bonus_calculation:
+          method: "percentage"
+          base_field: "son_36_saat_en_dusuk_yatirim"
+          percentage: 50
+          turnover: 6
+
+  # ============================================================
+  # 7. %20 Spor Kayıp Bonusu (direkt onay)
   # ============================================================
   spor_kayip_bonusu:
     display_name: "%20 Spor Kayıp Bonusu"
@@ -340,7 +377,7 @@ bonus_types:
     rules: []
 
   # ============================================================
-  # 7. Çevrimsiz 2X Yap 5X Çek (direkt onay)
+  # 8. Çevrimsiz 2X Yap 5X Çek (direkt onay)
   # ============================================================
   cevirmsiz_2x_yap_5x_cek:
     display_name: "Çevrimsiz 2X Yap 5X Çek"

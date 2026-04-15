@@ -200,6 +200,42 @@ def _make_rules_config() -> BonusRulesConfig:
                     ),
                 ],
             ),
+            "nakit_jest_bonusu": BonusTypeConfig(
+                display_name="%50 Nakit Jest",
+                default_action="reject",
+                default_reject_message_key="nakit_jest_genel_ret",
+                rules=[
+                    Rule(
+                        name="Hiç yatırım yok",
+                        conditions=[
+                            Condition(field="basarili_yatirim_var", operator="==", value=False),
+                        ],
+                        action="reject",
+                        reject_message_key="nakit_jest_yatirim_yok",
+                    ),
+                    Rule(
+                        name="36 saatte 4 yatırım yok",
+                        conditions=[
+                            Condition(field="son_36_saat_yatirim_sayisi", operator="<", value=4),
+                        ],
+                        action="reject",
+                        reject_message_key="nakit_jest_yetersiz_yatirim",
+                    ),
+                    Rule(
+                        name="Nakit jest onay",
+                        conditions=[
+                            Condition(field="son_36_saat_yatirim_sayisi", operator=">=", value=4),
+                        ],
+                        action="approve",
+                        bonus_calculation=BonusCalculation(
+                            method="percentage",
+                            base_field="son_36_saat_en_dusuk_yatirim",
+                            percentage=Decimal("50"),
+                            turnover=6,
+                        ),
+                    ),
+                ],
+            ),
         }
     )
 
@@ -217,6 +253,9 @@ MESSAGES = {
     "anlik_kayip_tarih_gecmis": "Tarih geçmiş.",
     "anlik_kayip_bakiye_yuksek": "Bakiye yüksek.",
     "anlik_kayip_ilk_kayip_almis": "İlk kayıp almış.",
+    "nakit_jest_genel_ret": "Nakit jest genel ret.",
+    "nakit_jest_yatirim_yok": "Nakit jest yatırım yok.",
+    "nakit_jest_yetersiz_yatirim": "36 saatte 4 yatırım yok.",
 }
 
 
@@ -519,6 +558,88 @@ def test_unknown_bonus_type_rejected():
     assert decision.action == "reject"
 
 
+# --- %50 Nakit Jest Bonusu Tests ---
+
+NAKIT_JEST_TYPE = "nakit_jest_bonusu"
+
+
+def test_nakit_jest_approve_4_deposits():
+    """4 deposits in 36 hours -> approve with 50% of minimum amount, 6x turnover."""
+    now = datetime.now()
+    profile = _make_profile(
+        durum="Aktif",
+        aktif_bonus="",
+        deposits=DepositHistory(entries=[
+            DepositEntry(amount=Decimal("200"), method="Havale", is_successful=True, date=now - timedelta(hours=2)),
+            DepositEntry(amount=Decimal("500"), method="Havale", is_successful=True, date=now - timedelta(hours=5)),
+            DepositEntry(amount=Decimal("100"), method="Havale", is_successful=True, date=now - timedelta(hours=10)),
+            DepositEntry(amount=Decimal("300"), method="Havale", is_successful=True, date=now - timedelta(hours=20)),
+        ]),
+    )
+    request = _make_request(bonus_type=NAKIT_JEST_TYPE)
+    rules = _make_rules_config()
+    decision = evaluate(profile, request, rules, MESSAGES)
+
+    assert decision.action == "approve"
+    # Minimum of [200, 500, 100, 300] = 100, 50% of 100 = 50
+    assert decision.bonus_amount == Decimal("50")
+    assert decision.bonus_turnover == 6
+
+
+def test_nakit_jest_reject_only_3_deposits():
+    """Only 3 deposits in 36 hours -> reject."""
+    now = datetime.now()
+    profile = _make_profile(
+        durum="Aktif",
+        deposits=DepositHistory(entries=[
+            DepositEntry(amount=Decimal("200"), method="Havale", is_successful=True, date=now - timedelta(hours=5)),
+            DepositEntry(amount=Decimal("500"), method="Havale", is_successful=True, date=now - timedelta(hours=10)),
+            DepositEntry(amount=Decimal("100"), method="Havale", is_successful=True, date=now - timedelta(hours=20)),
+        ]),
+    )
+    request = _make_request(bonus_type=NAKIT_JEST_TYPE)
+    rules = _make_rules_config()
+    decision = evaluate(profile, request, rules, MESSAGES)
+
+    assert decision.action == "reject"
+    assert decision.matched_rule_name == "36 saatte 4 yatırım yok"
+
+
+def test_nakit_jest_reject_old_deposits():
+    """4 deposits but some older than 36 hours -> reject if < 4 within window."""
+    now = datetime.now()
+    profile = _make_profile(
+        durum="Aktif",
+        deposits=DepositHistory(entries=[
+            DepositEntry(amount=Decimal("200"), method="Havale", is_successful=True, date=now - timedelta(hours=5)),
+            DepositEntry(amount=Decimal("500"), method="Havale", is_successful=True, date=now - timedelta(hours=10)),
+            DepositEntry(amount=Decimal("100"), method="Havale", is_successful=True, date=now - timedelta(hours=20)),
+            # This one is 48 hours ago -> outside 36 hour window
+            DepositEntry(amount=Decimal("300"), method="Havale", is_successful=True, date=now - timedelta(hours=48)),
+        ]),
+    )
+    request = _make_request(bonus_type=NAKIT_JEST_TYPE)
+    rules = _make_rules_config()
+    decision = evaluate(profile, request, rules, MESSAGES)
+
+    assert decision.action == "reject"
+    assert decision.matched_rule_name == "36 saatte 4 yatırım yok"
+
+
+def test_nakit_jest_reject_no_deposits():
+    """No deposits -> reject."""
+    profile = _make_profile(
+        durum="Aktif",
+        deposits=DepositHistory(entries=[]),
+    )
+    request = _make_request(bonus_type=NAKIT_JEST_TYPE)
+    rules = _make_rules_config()
+    decision = evaluate(profile, request, rules, MESSAGES)
+
+    assert decision.action == "reject"
+    assert decision.matched_rule_name == "Hiç yatırım yok"
+
+
 def test_normalize_bonus_type():
     """Test bonus type normalization strips internal %number patterns."""
     from src.pages.bonus_list_page import BonusListPage
@@ -528,3 +649,4 @@ def test_normalize_bonus_type():
     assert BonusListPage._normalize_bonus_type("%25 ANLIK KAYIP BONUSU") == "anlik_kayip_bonusu"
     assert BonusListPage._normalize_bonus_type("%300 HOŞGELDİN BONUSU") == "hosgeldin_bonusu"
     assert BonusListPage._normalize_bonus_type("ÇEVRİMSİZ 2X YAP 5X ÇEK") == "cevrimsiz_2x_yap_5x_cek"
+    assert BonusListPage._normalize_bonus_type("%50 NAKİT JEST BONUSU") == "nakit_jest_bonusu"
