@@ -71,6 +71,13 @@ class BonusProcessor:
         list page and watch for the 'Yeni Bonus Talebi' toast that the
         backoffice pushes in the bottom-right corner.  Only when this
         notification appears do we reload and process.
+
+        Processing order:
+        1. Set rows per page to 50 (backoffice defaults to 20)
+        2. Go to the LAST page (oldest requests)
+        3. Process rows bottom-to-top (oldest first)
+        4. Move to previous page, repeat
+        5. Continue until page 1 is done
         """
         settings = self.config.settings
         base_url = self.config.credentials.url
@@ -81,11 +88,17 @@ class BonusProcessor:
             base_url, settings.backoffice.bonus_list_path
         )
 
-        # Process any already-pending requests on first load
-        await self._process_all_pending(bonus_list, base_url)
+        # Increase rows per page from default 20 → 50
+        await bonus_list.set_rows_per_page(50)
+
+        # Process any already-pending requests on first load (all pages)
+        await self._process_all_pages(bonus_list, base_url)
 
         # Enter the notification-driven loop
         while True:
+            # Make sure we're back on page 1 for notification watching
+            await bonus_list.go_to_first_page()
+
             logger.info("waiting_for_notification")
             write_heartbeat(status="healthy", **self._stats)
 
@@ -97,24 +110,70 @@ class BonusProcessor:
             if got_notification:
                 # Reload the page so the new request appears in the table
                 await bonus_list.reload_page()
-                await self._process_all_pending(bonus_list, base_url)
+                await self._process_all_pages(bonus_list, base_url)
 
                 # Drain: if more notifications arrived while we were
                 # processing, reload and process again immediately
                 while await bonus_list.has_pending_notification():
                     logger.info("additional_notification_detected")
                     await bonus_list.reload_page()
-                    await self._process_all_pending(bonus_list, base_url)
+                    await self._process_all_pages(bonus_list, base_url)
             else:
                 # Timeout – do a safety reload to catch anything missed
                 logger.debug("notification_timeout_safety_reload")
                 await bonus_list.reload_page()
-                await self._process_all_pending(bonus_list, base_url)
+                await self._process_all_pages(bonus_list, base_url)
 
-    async def _process_all_pending(
+    async def _process_all_pages(
         self, bonus_list: BonusListPage, base_url: str
     ) -> int:
-        """Extract and process every pending request on the current page."""
+        """Process ALL pages of pending requests, oldest first.
+
+        Flow:
+        1. Go to the last page (oldest requests)
+        2. Process that page's pending rows (bottom-to-top)
+        3. Go to previous page, repeat
+        4. Stop after page 1 is done
+
+        Only "Beklemede" rows are processed; "Onaylandı" and
+        "Reddedildi" rows are automatically skipped.
+        """
+        total_pages = await bonus_list.get_total_pages()
+        total_processed = 0
+
+        if total_pages > 1:
+            # Navigate to last page first (oldest requests)
+            await bonus_list.go_to_last_page()
+            logger.info("starting_from_last_page", total_pages=total_pages)
+
+        # Process current page (which is the last page), then work backwards
+        while True:
+            current_page = await bonus_list.get_current_page()
+            logger.info("processing_page", page=current_page, total=total_pages)
+
+            count = await self._process_current_page(bonus_list, base_url)
+            total_processed += count
+
+            # Move to previous page
+            if current_page > 1:
+                went_back = await bonus_list.go_to_prev_page()
+                if not went_back:
+                    break
+            else:
+                break
+
+        logger.info("all_pages_completed", total_processed=total_processed)
+        return total_processed
+
+    async def _process_current_page(
+        self, bonus_list: BonusListPage, base_url: str
+    ) -> int:
+        """Extract and process every pending request on the current table page.
+
+        Only "Beklemede" rows are included; "Onaylandı" / "Reddedildi"
+        rows are filtered out.  Requests are returned in bottom-to-top
+        order (oldest first) by get_pending_requests().
+        """
         self._stats = {"processed": 0, "approved": 0, "rejected": 0, "errors": 0}
         settings = self.config.settings
 
@@ -123,7 +182,7 @@ class BonusProcessor:
         )
 
         if not requests:
-            logger.info("no_pending_requests")
+            logger.info("no_pending_requests_on_page")
             write_heartbeat(status="healthy", **self._stats)
             return 0
 
@@ -155,7 +214,7 @@ class BonusProcessor:
 
         self._save_processed_ids()
         write_heartbeat(status="healthy", **self._stats)
-        logger.info("cycle_completed", **self._stats)
+        logger.info("page_completed", **self._stats)
         return self._stats["processed"]
 
     # Bonus types that are auto-approved without profile checks

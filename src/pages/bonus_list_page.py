@@ -28,6 +28,41 @@ class BonusListPage(BasePage):
         await asyncio.sleep(2)  # Wait for table to load
         logger.info("bonus_list_loaded", url=url)
 
+    async def set_rows_per_page(self, count: int = 50) -> None:
+        """Change the 'Satır' (rows per page) dropdown to show more rows.
+
+        The backoffice defaults to 20 rows.  We switch to 50 so that
+        a single page covers more requests before we need to paginate.
+        """
+        try:
+            select_sel = self.selectors.get_nested(
+                self.page_name, "rows_per_page", "rows_per_page_select"
+            )
+            locator = self._to_locator(select_sel)
+
+            if await locator.first.count() > 0:
+                await locator.first.select_option(str(count))
+                await asyncio.sleep(2)  # Wait for table to re-render
+                logger.info("rows_per_page_changed", count=count)
+                return
+
+            # Fallback: try clicking the current value and selecting from a list
+            # Some UI frameworks use a custom dropdown instead of <select>
+            current = self.page.locator(
+                f"text='{count}', "
+                "[class*='page-size'] [class*='option'], "
+                "[class*='rows-per-page'] [class*='option']"
+            )
+            if await current.first.count() > 0:
+                await current.first.click()
+                await asyncio.sleep(2)
+                logger.info("rows_per_page_changed_fallback", count=count)
+                return
+
+            logger.debug("rows_per_page_selector_not_found")
+        except Exception as e:
+            logger.warning("rows_per_page_change_failed", error=str(e))
+
     async def wait_for_notification(self, timeout_seconds: int = 300) -> bool:
         """Wait for a 'Yeni Bonus Talebi' toast notification to appear.
 
@@ -89,12 +124,10 @@ class BonusListPage(BasePage):
         return False
 
     async def get_pending_requests(self, max_count: int = 50) -> list[BonusRequest]:
-        """Extract pending bonus requests from the Betronix table.
+        """Extract pending bonus requests from the current table page.
 
-        Betronix table structure per row:
-        OYUNCU | KULLANICI ADI | BONUS | TUTAR | ÇEVRİM | DURUM | TARİH | İŞLEMLER(✓ ✗ 👁)
-
-        The request ID is embedded as #ID in the player info column.
+        Returns requests in REVERSE order (bottom-to-top = oldest first)
+        so that the oldest pending request is processed first.
         """
         rows_locator = self.locate("request_rows")
         await asyncio.sleep(1)
@@ -112,8 +145,104 @@ class BonusListPage(BasePage):
                 logger.warning("row_extraction_error", row_index=i, error=str(e))
                 continue
 
+        # Reverse: oldest (bottom of table) processed first
+        requests.reverse()
+
         logger.info("pending_requests_extracted", count=len(requests))
         return requests
+
+    # ------------------------------------------------------------------
+    # Pagination
+    # ------------------------------------------------------------------
+
+    async def get_total_pages(self) -> int:
+        """Read the current page indicator (e.g. '1 / 25') and return total pages."""
+        try:
+            indicator_sel = self.selectors.get_nested(
+                self.page_name, "pagination", "page_indicator"
+            )
+            locator = self._to_locator(indicator_sel)
+            # Try each matching element for text like "1 / 25" or "Sayfa 1/25"
+            count = await locator.count()
+            for i in range(count):
+                text = (await locator.nth(i).text_content() or "").strip()
+                match = re.search(r"(\d+)\s*/\s*(\d+)", text)
+                if match:
+                    total = int(match.group(2))
+                    logger.debug("pagination_detected", total_pages=total)
+                    return total
+        except Exception as e:
+            logger.debug("pagination_not_found", error=str(e))
+        return 1  # No pagination = single page
+
+    async def get_current_page(self) -> int:
+        """Read the current page number from the indicator."""
+        try:
+            indicator_sel = self.selectors.get_nested(
+                self.page_name, "pagination", "page_indicator"
+            )
+            locator = self._to_locator(indicator_sel)
+            count = await locator.count()
+            for i in range(count):
+                text = (await locator.nth(i).text_content() or "").strip()
+                match = re.search(r"(\d+)\s*/\s*(\d+)", text)
+                if match:
+                    return int(match.group(1))
+        except Exception:
+            pass
+        return 1
+
+    async def go_to_last_page(self) -> bool:
+        """Navigate to the last page of the table."""
+        try:
+            last_btn_sel = self.selectors.get_nested(
+                self.page_name, "pagination", "last_page_button"
+            )
+            locator = self._to_locator(last_btn_sel)
+            if await locator.first.count() > 0:
+                await locator.first.click()
+                await asyncio.sleep(1.5)
+                logger.info("navigated_to_last_page", page=await self.get_current_page())
+                return True
+        except Exception as e:
+            logger.debug("last_page_button_failed", error=str(e))
+        return False
+
+    async def go_to_prev_page(self) -> bool:
+        """Navigate to the previous page. Returns False if already on page 1."""
+        current = await self.get_current_page()
+        if current <= 1:
+            return False
+
+        try:
+            prev_btn_sel = self.selectors.get_nested(
+                self.page_name, "pagination", "prev_page_button"
+            )
+            locator = self._to_locator(prev_btn_sel)
+            if await locator.first.count() > 0:
+                await locator.first.click()
+                await asyncio.sleep(1.5)
+                new_page = await self.get_current_page()
+                logger.debug("navigated_to_prev_page", page=new_page)
+                return new_page < current
+        except Exception as e:
+            logger.debug("prev_page_button_failed", error=str(e))
+        return False
+
+    async def go_to_first_page(self) -> bool:
+        """Navigate back to the first page."""
+        try:
+            first_btn_sel = self.selectors.get_nested(
+                self.page_name, "pagination", "first_page_button"
+            )
+            locator = self._to_locator(first_btn_sel)
+            if await locator.first.count() > 0:
+                await locator.first.click()
+                await asyncio.sleep(1.5)
+                return True
+        except Exception:
+            pass
+        return False
 
     async def _extract_request_from_row(
         self, row: Locator, index: int

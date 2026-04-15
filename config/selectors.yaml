@@ -71,6 +71,30 @@ bonus_list_page:
     view_button:
       strategy: css
       value: "button[class*='eye'], button[class*='view'], button[class*='detail'], [class*='action'] button:nth-child(3)"
+  # Sayfalama kontrolleri (sol alt)
+  pagination:
+    # "Son sayfa" (>>) veya "İleri" (>) butonları
+    last_page_button:
+      strategy: css
+      value: "button[aria-label*='last'], button[aria-label*='Last'], [class*='pagination'] button:last-child, [class*='pagination'] li:last-child button"
+    next_page_button:
+      strategy: css
+      value: "button[aria-label*='next'], button[aria-label*='Next'], [class*='pagination'] button:nth-last-child(2), [class*='next'] button"
+    prev_page_button:
+      strategy: css
+      value: "button[aria-label*='prev'], button[aria-label*='Prev'], [class*='pagination'] button:nth-child(2), [class*='prev'] button"
+    first_page_button:
+      strategy: css
+      value: "button[aria-label*='first'], button[aria-label*='First'], [class*='pagination'] button:first-child, [class*='pagination'] li:first-child button"
+    # Sayfa göstergesi: "1 / 25" gibi metin
+    page_indicator:
+      strategy: css
+      value: "[class*='pagination'] span, [class*='pagination'] p, [class*='page'] span, [class*='paging']"
+  # "Satır: 20" dropdown'ı - satır sayısını değiştirmek için
+  rows_per_page:
+    rows_per_page_select:
+      strategy: css
+      value: "select[class*='page-size'], select[class*='rows'], select[class*='per-page'], [class*='pagination'] select, [class*='page-size'] select"
 
 # Talebi Onayla Modalı
 approve_modal:
