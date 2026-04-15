@@ -64,39 +64,24 @@ class BonusListPage(BasePage):
             logger.warning("rows_per_page_change_failed", error=str(e))
 
     async def wait_for_notification(self, timeout_seconds: int = 300) -> bool:
-        """Wait for ANY toast/notification to appear in the bottom-right.
+        """Wait for the 'Yeni Bonus Talebi' toast notification.
 
-        The backoffice pushes a toast whenever a new bonus request is
-        submitted. We treat ANY visible toast as a trigger to reload,
-        since bonus requests are the primary activity on this page.
+        The backoffice pushes a toast to the bottom-right with the text
+        'Yeni Bonus Talebi' (or 'New Bonus Request' in English) whenever
+        a new bonus request is submitted.
 
         Returns True if a notification was detected, False on timeout.
         """
         timeout_ms = timeout_seconds * 1000
 
-        # Broad selector: catch any toast library (sonner, react-hot-toast,
-        # react-toastify, radix toast, or custom implementations)
-        toast_selectors = (
-            "[class*='toast']",
-            "[class*='Toast']",
-            "[class*='Toastify']",
-            "[class*='sonner']",
-            "[class*='Sonner']",
-            "[class*='notification']",
-            "[class*='Notification']",
-            "[class*='snackbar']",
-            "[role='alert']",
-            "[role='status']",
-            "[data-sonner-toast]",
-            "[data-radix-toast]",
-        )
-        combined = ", ".join(toast_selectors)
-
         logger.debug("waiting_for_notification", timeout_seconds=timeout_seconds)
 
         try:
-            locator = self.page.locator(combined).first
-            await locator.wait_for(state="visible", timeout=timeout_ms)
+            # Primary: wait for the known notification text
+            locator = self.page.get_by_text("Yeni Bonus Talebi").or_(
+                self.page.get_by_text("New Bonus Request")
+            )
+            await locator.first.wait_for(state="visible", timeout=timeout_ms)
 
             text = (await locator.first.text_content() or "").strip()
             logger.info("notification_detected", text=text[:100])
@@ -113,22 +98,14 @@ class BonusListPage(BasePage):
         logger.info("page_reloaded")
 
     async def has_pending_notification(self) -> bool:
-        """Quick check if a notification is currently visible (non-blocking).
-
-        Used after processing to detect notifications that arrived
-        while previous requests were being handled.
-        """
+        """Quick check if a notification is currently visible (non-blocking)."""
         try:
-            notification_sel = self.selectors.get(
-                self.page_name, "new_request_notification"
+            locator = self.page.get_by_text("Yeni Bonus Talebi").or_(
+                self.page.get_by_text("New Bonus Request")
             )
-            locator = self._to_locator(notification_sel)
-            if await locator.first.is_visible():
-                text = (await locator.first.text_content() or "").lower()
-                return any(kw in text for kw in self._NOTIFICATION_KEYWORDS)
+            return await locator.first.is_visible()
         except Exception:
-            pass
-        return False
+            return False
 
     async def get_pending_requests(self, max_count: int = 50) -> list[BonusRequest]:
         """Extract pending bonus requests from the current table page.
