@@ -360,9 +360,15 @@ class BonusListPage(BasePage):
                 key=bonus_type_key,
             )
 
+            # The #number in the PLAYER column is the player ID.
+            # Profile URL is /players/{player_id}, so we use this as user_id.
+            # For request tracking we need a unique key per request,
+            # so we combine player_id with bonus_type.
+            player_id = request_id  # #number = player ID
+
             return BonusRequest(
-                request_id=request_id,
-                user_id=username,  # In Betronix, username serves as user_id
+                request_id=f"{player_id}_{bonus_type_key}",
+                user_id=player_id,  # Numeric ID for /players/{id} URL
                 username=player_name,
                 bonus_type=bonus_type_key,
                 requested_amount=requested_amount,
@@ -419,19 +425,21 @@ class BonusListPage(BasePage):
         return re.sub(r"\s+", "_", cleaned.strip().lower())
 
     async def find_row_by_request_id(self, request_id: str) -> Locator | None:
-        """Find a table row by its request ID (#1234...) text.
+        """Find a table row by its player ID (#1234...) text.
 
-        After navigating to a user profile and back, the row order may
-        have changed (new requests inserted).  Instead of relying on a
-        stale row index we search every row for the matching #ID.
+        The request_id format is '{player_id}_{bonus_type}'.
+        We extract the player_id part and search for #{player_id} in rows.
         """
+        # Extract player_id from composite request_id
+        player_id = request_id.split("_")[0] if "_" in request_id else request_id
+
         rows_locator = self.locate("request_rows")
         count = await rows_locator.count()
 
         for i in range(count):
             row = rows_locator.nth(i)
             text = await row.text_content() or ""
-            if f"#{request_id}" in text:
+            if f"#{player_id}" in text:
                 logger.debug("row_found_by_id", request_id=request_id, row_index=i)
                 return row
 
