@@ -29,6 +29,7 @@ class BrowserManager:
         self._browser = await self._playwright.chromium.launch(
             headless=self._config.headless,
             slow_mo=self._config.slow_mo,
+            args=["--no-sandbox", "--disable-setuid-sandbox"],
         )
         logger.info("browser_started")
 
