@@ -199,9 +199,9 @@ class BonusActionExecutor:
                     modal, decision.bonus_amount, decision.bonus_turnover, request_id
                 )
 
-            # Find and click "Onayla" confirm button
+            # Find and click confirm button (panel uses English UI)
             confirm_btn = await self._find_button(
-                preferred_texts=["Onayla", "Tamam", "Evet", "Kaydet", "Confirm", "OK"],
+                preferred_texts=["Approve", "Confirm", "OK", "Onayla", "Tamam", "Evet", "Kaydet"],
                 color_classes=["emerald", "green", "primary", "success"],
                 modal=modal,
             )
@@ -244,17 +244,22 @@ class BonusActionExecutor:
         """Enable custom values checkbox and fill amount/turnover inputs."""
         scope = modal if modal is not None else self.page
 
-        # Click "Ozel degerler kullan" checkbox
-        checkbox = scope.get_by_text("Özel değerler kullan")
-        if await checkbox.count() > 0:
-            await checkbox.click()
-            await asyncio.sleep(0.5)
-        else:
-            # Try on full page if modal scope missed it
-            checkbox = self.page.get_by_text("Özel değerler kullan")
+        # Click custom values checkbox (try English first, then Turkish)
+        checkbox_found = False
+        for text in ["Use custom values", "Custom values", "Özel değerler kullan"]:
+            checkbox = scope.get_by_text(text)
             if await checkbox.count() > 0:
                 await checkbox.click()
                 await asyncio.sleep(0.5)
+                checkbox_found = True
+                break
+        if not checkbox_found:
+            for text in ["Use custom values", "Custom values", "Özel değerler kullan"]:
+                checkbox = self.page.get_by_text(text)
+                if await checkbox.count() > 0:
+                    await checkbox.click()
+                    await asyncio.sleep(0.5)
+                    break
 
         # Fill custom amount - try multiple selectors
         amount_str = str(int(amount))
@@ -338,9 +343,9 @@ class BonusActionExecutor:
             if decision.reject_message:
                 await self._fill_reject_reason(modal, decision.reject_message)
 
-            # Find and click "Reddet" confirm button
+            # Find and click reject confirm button (panel uses English UI)
             confirm_btn = await self._find_button(
-                preferred_texts=["Reddet", "Evet", "Tamam", "Onayla", "Kaydet", "Confirm", "Reject"],
+                preferred_texts=["Reject", "Confirm", "Reddet", "Evet", "Tamam"],
                 color_classes=["red", "danger", "destructive", "rose"],
                 modal=modal,
             )
@@ -416,12 +421,13 @@ class BonusActionExecutor:
     async def _try_close_modal(self) -> None:
         """Try to close any open modal to recover from errors."""
         try:
-            # Try clicking "Iptal" (Cancel)
-            cancel = self.page.get_by_text("İptal", exact=True).first
-            if await cancel.count() > 0:
-                await cancel.click()
-                await asyncio.sleep(0.5)
-                return
+            # Try clicking Cancel (English UI)
+            for cancel_text in ["Cancel", "İptal"]:
+                cancel = self.page.get_by_text(cancel_text, exact=True).first
+                if await cancel.count() > 0:
+                    await cancel.click()
+                    await asyncio.sleep(0.5)
+                    return
 
             # Try clicking X close button
             for sel in [
