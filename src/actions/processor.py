@@ -220,6 +220,99 @@ class BonusProcessor:
         logger.info("page_completed", **self._stats)
         return self._stats["processed"]
 
+    async def _open_profile_via_click(
+        self,
+        bonus_list: BonusListPage,
+        request: BonusRequest,
+    ) -> tuple:
+        """Open user profile by clicking the username link in the table row.
+
+        The username cell contains a link icon that opens the profile
+        in a new browser tab.  We:
+        1. Find the row by player_id
+        2. Click the link icon in the USERNAME cell
+        3. Wait for the new tab to open
+        4. Extract profile data from the new tab
+        5. Close the new tab (returns to bonus list tab)
+
+        Returns (UserProfile, new_tab_page) or (None, None) on failure.
+        """
+        try:
+            # Extract player_id from composite request_id
+            player_id = request.user_id
+
+            row = await bonus_list.find_row_by_request_id(request.request_id)
+            if row is None:
+                return None, None
+
+            # Find the username cell (cell index 1) and its link icon
+            username_cell = row.locator("td").nth(1)
+
+            # The link icon is typically an SVG or anchor element in the cell
+            # Try clicking the external link icon (↗)
+            link_icon = username_cell.locator("a, svg, [class*='external'], [class*='link']").first
+
+            # Listen for new tab
+            context = self.page.context
+            async with context.expect_page(timeout=10000) as new_page_info:
+                if await link_icon.count() > 0:
+                    await link_icon.click()
+                else:
+                    # Fallback: click the username text itself
+                    username_text = username_cell.locator("span[class*='cursor'], span[class*='pointer'], span[class*='primary']").first
+                    if await username_text.count() > 0:
+                        await username_text.click()
+                    else:
+                        # Last resort: click the cell
+                        await username_cell.click()
+
+            new_tab = await new_page_info.value
+            await new_tab.wait_for_load_state("networkidle", timeout=30000)
+
+            logger.info("profile_tab_opened", url=new_tab.url)
+
+            # Wait for profile content to load
+            for attempt in range(10):
+                text_nodes = await new_tab.evaluate(
+                    """() => {
+                    const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                    let c = 0;
+                    while (w.nextNode()) {
+                        if (w.currentNode.textContent.includes('₺') ||
+                            w.currentNode.textContent.includes('Balance') ||
+                            w.currentNode.textContent.includes('Bakiye')) c++;
+                    }
+                    return c;
+                }"""
+                )
+                if text_nodes > 2:
+                    break
+                await asyncio.sleep(1)
+
+            # Extract profile data from the new tab
+            profile_page = UserProfilePage(new_tab, self.config.selectors)
+            profile = await profile_page.extract_profile(
+                request.user_id, request.username
+            )
+
+            # Close the new tab - returns to bonus list
+            await new_tab.close()
+            logger.info("profile_tab_closed")
+
+            return profile, None
+
+        except Exception as e:
+            logger.warning("profile_click_failed", error=str(e))
+            # Try to close any extra tabs
+            try:
+                pages = self.page.context.pages
+                while len(pages) > 1:
+                    await pages[-1].close()
+                    pages = self.page.context.pages
+            except Exception:
+                pass
+            return None, None
+
     # Bonus types that are auto-approved without profile checks
     DIRECT_APPROVE_TYPES = frozenset({
         "spor_kayip_bonusu",
@@ -264,30 +357,33 @@ class BonusProcessor:
                 bonus_type=request.bonus_type,
             )
         else:
-            # Step 1: Navigate to user profile to get their data
-            profile_page = UserProfilePage(self.page, self.config.selectors)
-            await profile_page.navigate_to_profile(
-                base_url,
-                settings.backoffice.user_profile_path_template,
-                request.user_id,
+            # Step 1: Click username link in the row to open profile in new tab
+            profile, new_tab = await self._open_profile_via_click(
+                bonus_list, request
             )
 
-            # Step 2: Extract profile data (cards + tabs)
-            profile = await profile_page.extract_profile(
-                request.user_id, request.username
-            )
+            if profile is None:
+                # Fallback: navigate via URL
+                logger.warning("click_navigation_failed_using_url", user_id=request.user_id)
+                profile_page = UserProfilePage(self.page, self.config.selectors)
+                await profile_page.navigate_to_profile(
+                    base_url,
+                    settings.backoffice.user_profile_path_template,
+                    request.user_id,
+                )
+                profile = await profile_page.extract_profile(
+                    request.user_id, request.username
+                )
+                await bonus_list.navigate_to_list(
+                    base_url, settings.backoffice.bonus_list_path
+                )
 
-            # Step 3: Evaluate rules
+            # Step 2: Evaluate rules
             decision = rule_engine.evaluate(
                 profile=profile,
                 request=request,
                 rules_config=self.config.bonus_rules,
                 messages=self.config.messages.rejection_messages,
-            )
-
-            # Step 4: Navigate back to bonus list
-            await bonus_list.navigate_to_list(
-                base_url, settings.backoffice.bonus_list_path
             )
 
         logger.info(
