@@ -120,9 +120,15 @@ def evaluate(
 
                 if rule.action == "approve":
                     amount = calculate_bonus(profile, rule.bonus_calculation)
+                    turnover = (
+                        rule.bonus_calculation.turnover
+                        if rule.bonus_calculation is not None
+                        else None
+                    )
                     return Decision(
                         action="approve",
                         bonus_amount=amount,
+                        bonus_turnover=turnover,
                         matched_rule_name=rule.name,
                     )
                 else:

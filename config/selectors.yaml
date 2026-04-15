@@ -163,6 +163,9 @@ user_profile_page:
   yatirimlar_tab:
     strategy: text
     value: "Yatırımlar"
+  cekimler_tab:
+    strategy: text
+    value: "Çekimler"
   bonuslar_tab:
     strategy: text
     value: "Bonuslar"

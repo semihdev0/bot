@@ -6,7 +6,7 @@ Betronix profile has 4 info cards:
 - Yatırım Bilgileri: İlk Yatırım, Son Yatırım, Yatırım Sayısı, Çekim Sayısı, Son Kullanılan Bonus
 - Finansal Bilgiler: Bakiye, Bonus, Toplam Yatırım, Toplam Çekim, Kar/Zarar
 
-Plus an "Aktif Bonus" section and tabs (Yatırımlar, Çekimler, etc.)
+Plus tabs: Yatırımlar, Çekimler, Bonuslar, etc.
 """
 
 from __future__ import annotations
@@ -20,10 +20,22 @@ import structlog
 from playwright.async_api import Page
 
 from src.config.selectors import SelectorRegistry
-from src.engine.models import UserProfile
+from src.engine.models import (
+    BonusHistory,
+    BonusHistoryEntry,
+    DepositEntry,
+    DepositHistory,
+    UserProfile,
+    WithdrawalEntry,
+    WithdrawalHistory,
+)
 from src.pages.base import BasePage
 
 logger = structlog.get_logger()
+
+# Successful deposit/withdrawal status keywords (Turkish)
+_SUCCESS_KEYWORDS = ("tamamlan", "başarılı", "onaylan", "completed", "success")
+_FAILED_KEYWORDS = ("başarısız", "iptal", "reddedil", "failed", "cancelled")
 
 
 class UserProfilePage(BasePage):
@@ -36,7 +48,7 @@ class UserProfilePage(BasePage):
         path = path_template.format(user_id=user_id)
         url = f"{base_url.rstrip('/')}{path}"
         await self.navigate(url)
-        await asyncio.sleep(2)  # Wait for profile data to load
+        await asyncio.sleep(2)
         logger.debug("user_profile_loaded", user_id=user_id)
 
     async def navigate_via_username_link(self, link_locator) -> None:
@@ -49,8 +61,11 @@ class UserProfilePage(BasePage):
     async def extract_profile(self, user_id: str, username: str = "") -> UserProfile:
         """Extract all relevant user data from the Betronix profile page.
 
-        Uses a label-based extraction approach: find the label text,
-        then get the adjacent value.
+        Extracts data from:
+        1. Profile info cards (Finansal, Yatırım, Hesap bilgileri)
+        2. Yatırımlar tab (deposit history)
+        3. Çekimler tab (withdrawal history)
+        4. Bonuslar tab (bonus history)
         """
         # --- Finansal Bilgiler ---
         bakiye = await self._extract_value_by_label("Bakiye")
@@ -74,8 +89,11 @@ class UserProfilePage(BasePage):
         # --- Aktif Bonus ---
         aktif_bonus = await self._extract_aktif_bonus()
 
-        # --- Son yatırım tutarını yatırımlar tablosundan çek ---
-        son_yatirim_tutari = await self._extract_last_deposit_amount()
+        # --- Tab Data: Yatırımlar, Çekimler, Bonuslar ---
+        deposits = await self._extract_deposit_history()
+        son_yatirim_tutari = self._get_last_successful_amount(deposits)
+        withdrawals = await self._extract_withdrawal_history()
+        bonus_history = await self._extract_bonus_history()
 
         profile = UserProfile(
             user_id=user_id,
@@ -95,6 +113,9 @@ class UserProfilePage(BasePage):
             kayit_tarihi=self._parse_date(kayit_tarihi_raw),
             son_giris=self._parse_date(son_giris_raw),
             aktif_bonus=aktif_bonus,
+            deposits=deposits,
+            withdrawals=withdrawals,
+            bonus_history=bonus_history,
         )
 
         logger.info(
@@ -106,36 +127,202 @@ class UserProfilePage(BasePage):
             son_yatirim_tutari=str(profile.son_yatirim_tutari),
             aktif_bonus=profile.aktif_bonus,
             durum=profile.durum,
+            deposits_count=len(deposits.entries),
+            withdrawals_count=len(withdrawals.entries),
+            bonus_history_count=len(bonus_history.entries),
         )
         return profile
 
-    async def _extract_value_by_label(self, label: str) -> str:
-        """Extract the value next to a label on the profile page.
+    # ------------------------------------------------------------------
+    # Tab extractors
+    # ------------------------------------------------------------------
 
-        Betronix shows data as: "Label    Value" in cards.
-        Strategy: find the element containing the label text,
-        then get the sibling/adjacent element's text.
+    async def _extract_deposit_history(self) -> DepositHistory:
+        """Extract deposit entries from the Yatırımlar tab.
+
+        Table columns: REFERANS KODU | TUTAR | YÖNTEM | DURUM | TARİH
+        Green rows = successful, Red rows = failed.
         """
+        entries: list[DepositEntry] = []
         try:
-            # Try finding the label and getting adjacent value
-            # Approach 1: find text, get parent row, get last text element
+            await self._click_tab("Yatırımlar")
+            await self._select_time_filter("Tüm Zamanlar")
+
+            rows = self.page.locator("table tbody tr")
+            count = await rows.count()
+
+            for i in range(min(count, 50)):
+                try:
+                    row = rows.nth(i)
+                    row_text = (await row.text_content() or "").lower()
+
+                    # Determine success status from row text/style
+                    is_successful = self._is_successful_status(row_text)
+
+                    # Extract columns
+                    amount_text = await self._safe_cell_text(row, 2)
+                    method_text = await self._safe_cell_text(row, 3)
+                    status_text = await self._safe_cell_text(row, 4)
+                    date_text = await self._safe_cell_text(row, 5)
+
+                    entries.append(DepositEntry(
+                        amount=self._parse_decimal(amount_text),
+                        status=status_text,
+                        method=method_text,
+                        date=self._parse_date(date_text),
+                        is_successful=is_successful,
+                    ))
+                except Exception as e:
+                    logger.debug("deposit_row_parse_error", row=i, error=str(e))
+                    continue
+
+            logger.debug("deposit_history_extracted", count=len(entries))
+        except Exception as e:
+            logger.warning("deposit_history_extraction_failed", error=str(e))
+
+        return DepositHistory(entries=entries)
+
+    async def _extract_withdrawal_history(self) -> WithdrawalHistory:
+        """Extract withdrawal entries from the Çekimler tab.
+
+        Table columns: REFERANS KODU | TUTAR | YÖNTEM | DURUM | TARİH
+        """
+        entries: list[WithdrawalEntry] = []
+        try:
+            await self._click_tab("Çekimler")
+            await self._select_time_filter("Tüm Zamanlar")
+
+            rows = self.page.locator("table tbody tr")
+            count = await rows.count()
+
+            for i in range(min(count, 50)):
+                try:
+                    row = rows.nth(i)
+                    row_text = (await row.text_content() or "").lower()
+
+                    is_successful = self._is_successful_status(row_text)
+
+                    amount_text = await self._safe_cell_text(row, 2)
+                    status_text = await self._safe_cell_text(row, 4)
+                    date_text = await self._safe_cell_text(row, 5)
+
+                    entries.append(WithdrawalEntry(
+                        amount=self._parse_decimal(amount_text),
+                        status=status_text,
+                        date=self._parse_date(date_text),
+                        is_successful=is_successful,
+                    ))
+                except Exception as e:
+                    logger.debug("withdrawal_row_parse_error", row=i, error=str(e))
+                    continue
+
+            logger.debug("withdrawal_history_extracted", count=len(entries))
+        except Exception as e:
+            logger.warning("withdrawal_history_extraction_failed", error=str(e))
+
+        return WithdrawalHistory(entries=entries)
+
+    async def _extract_bonus_history(self) -> BonusHistory:
+        """Extract bonus entries from the Bonuslar tab.
+
+        Table columns: BONUS ADI | BONUS TUTARI | ÇEVRİM İLERLEMESİ | ÇEVRİM HEDEFİ | DURUM | TARİH
+        """
+        entries: list[BonusHistoryEntry] = []
+        try:
+            await self._click_tab("Bonuslar")
+            await self._select_time_filter("Tüm Zamanlar")
+
+            rows = self.page.locator("table tbody tr")
+            count = await rows.count()
+
+            for i in range(min(count, 50)):
+                try:
+                    row = rows.nth(i)
+
+                    bonus_name = await self._safe_cell_text(row, 1)
+                    amount_text = await self._safe_cell_text(row, 2)
+                    status_text = await self._safe_cell_text(row, 5)
+                    date_text = await self._safe_cell_text(row, 6)
+
+                    entries.append(BonusHistoryEntry(
+                        bonus_name=bonus_name,
+                        amount=self._parse_decimal(amount_text),
+                        status=status_text.strip(),
+                        date=self._parse_date(date_text),
+                    ))
+                except Exception as e:
+                    logger.debug("bonus_row_parse_error", row=i, error=str(e))
+                    continue
+
+            logger.debug("bonus_history_extracted", count=len(entries))
+        except Exception as e:
+            logger.warning("bonus_history_extraction_failed", error=str(e))
+
+        return BonusHistory(entries=entries)
+
+    # ------------------------------------------------------------------
+    # Tab helpers
+    # ------------------------------------------------------------------
+
+    async def _click_tab(self, tab_name: str) -> None:
+        """Click a tab on the profile page (Yatırımlar, Çekimler, Bonuslar, etc.)."""
+        tab = self.page.get_by_text(tab_name, exact=True).first
+        if await tab.count() > 0:
+            await tab.click()
+            await asyncio.sleep(1.5)
+
+    async def _select_time_filter(self, filter_name: str) -> None:
+        """Select a time filter (Tüm Zamanlar, Son 7 Gün, etc.)."""
+        try:
+            time_filter = self.page.get_by_text(filter_name, exact=True).first
+            if await time_filter.count() > 0:
+                await time_filter.click()
+                await asyncio.sleep(1)
+        except Exception:
+            pass
+
+    async def _safe_cell_text(self, row, col_index: int) -> str:
+        """Safely get text from a table cell by column index."""
+        try:
+            cell = row.locator(f"td:nth-child({col_index})")
+            if await cell.count() > 0:
+                return (await cell.text_content() or "").strip()
+        except Exception:
+            pass
+        return ""
+
+    @staticmethod
+    def _is_successful_status(row_text: str) -> bool:
+        """Determine if a row represents a successful transaction."""
+        text = row_text.lower()
+        if any(kw in text for kw in _FAILED_KEYWORDS):
+            return False
+        return any(kw in text for kw in _SUCCESS_KEYWORDS)
+
+    @staticmethod
+    def _get_last_successful_amount(deposits: DepositHistory) -> Decimal:
+        """Get the amount of the most recent successful deposit."""
+        last = deposits.last_successful
+        return last.amount if last else Decimal("0")
+
+    # ------------------------------------------------------------------
+    # Label-based extraction (profile cards)
+    # ------------------------------------------------------------------
+
+    async def _extract_value_by_label(self, label: str) -> str:
+        """Extract the value next to a label on the profile page."""
+        try:
             label_locator = self.page.get_by_text(label, exact=False).first
             if await label_locator.count() == 0:
                 return ""
 
-            # Get the parent container (likely a row/flex container)
             parent = label_locator.locator("..")
             parent_text = await parent.text_content() or ""
-
-            # Remove the label from the full text to get the value
             value = parent_text.replace(label, "").strip()
-
-            # Clean up common artifacts
             value = re.sub(r"\s+", " ", value).strip()
 
             logger.debug("label_value_extracted", label=label, value=value[:50])
             return value
-
         except Exception as e:
             logger.debug("label_extraction_failed", label=label, error=str(e))
             return ""
@@ -147,47 +334,16 @@ class UserProfilePage(BasePage):
             if await section.count() > 0:
                 parent = section.locator("..")
                 text = await parent.text_content() or ""
-                # Remove "Aktif Bonus" label and extract bonus name
                 cleaned = text.replace("Aktif Bonus", "").strip()
-                # Extract bonus name (e.g., "%25 ANLIK KAYIP BONUSU")
                 if cleaned and cleaned != "-":
                     return cleaned.split("\n")[0].strip()
             return ""
         except Exception:
             return ""
 
-    async def _extract_last_deposit_amount(self) -> Decimal:
-        """Navigate to Yatırımlar tab and get the most recent deposit amount.
-
-        The deposits table has: REFERANS KODU | TUTAR | YÖNTEM | DURUM | TARİH
-        We want the TUTAR from the first completed (Tamamlandı) row.
-        """
-        try:
-            # Click Yatırımlar tab
-            yatirimlar_tab = self.page.get_by_text("Yatırımlar", exact=True).first
-            if await yatirimlar_tab.count() > 0:
-                await yatirimlar_tab.click()
-                await asyncio.sleep(1)
-
-            # Look for the first row with a completed status
-            rows = self.page.locator("table tbody tr")
-            count = await rows.count()
-
-            for i in range(min(count, 10)):
-                row = rows.nth(i)
-                row_text = await row.text_content() or ""
-
-                # Check for completed status
-                if "tamamlan" in row_text.lower():
-                    # Get the amount column (2nd column)
-                    amount_cell = row.locator("td:nth-child(2)")
-                    amount_text = await amount_cell.text_content() or "0"
-                    return self._parse_decimal(amount_text)
-
-            return Decimal("0")
-        except Exception as e:
-            logger.debug("last_deposit_extraction_failed", error=str(e))
-            return Decimal("0")
+    # ------------------------------------------------------------------
+    # Parsers
+    # ------------------------------------------------------------------
 
     @staticmethod
     def _parse_decimal(text: str) -> Decimal:
@@ -206,22 +362,14 @@ class UserProfilePage(BasePage):
         if not cleaned or cleaned == "-":
             return Decimal("0")
 
-        # Handle Turkish number format: 13.915 = 13915 (dot as thousands sep)
-        # If there's a comma, it's the decimal separator: 13.915,50
         if "," in cleaned:
-            # Has decimal comma: 1.234,56 -> 1234.56
             cleaned = cleaned.replace(".", "").replace(",", ".")
         else:
-            # No comma: could be 13.915 (thirteen thousand) or 3.50 (three and a half)
-            # Heuristic: if dot is followed by exactly 3 digits, it's thousands separator
             parts = cleaned.split(".")
             if len(parts) == 2 and len(parts[1]) == 3:
-                # 13.915 -> 13915 (thousands separator)
                 cleaned = cleaned.replace(".", "")
             elif len(parts) > 2:
-                # 1.234.567 -> 1234567 (multiple thousands separators)
                 cleaned = cleaned.replace(".", "")
-            # else: single dot with non-3 decimals, treat as decimal point
 
         try:
             return Decimal(cleaned)
@@ -244,7 +392,6 @@ class UserProfilePage(BasePage):
         if not text or text.strip() in ("", "-"):
             return None
 
-        # Try to find a full date pattern in the text
         for fmt in (
             "%d.%m.%Y %H:%M",
             "%d.%m.%Y %H:%M:%S",
@@ -255,7 +402,6 @@ class UserProfilePage(BasePage):
             "%Y-%m-%d %H:%M:%S",
             "%Y-%m-%d",
         ):
-            # Try matching against different parts of the text
             for line in text.split("\n"):
                 line = line.strip()
                 if not line:

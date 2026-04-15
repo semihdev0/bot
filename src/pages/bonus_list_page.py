@@ -146,8 +146,8 @@ class BonusListPage(BasePage):
 
         E.g., '%15 KRİPTO YATIRIM BONUSU' -> 'kripto_yatirim_bonusu'
         """
-        # Remove percentage prefix
-        cleaned = re.sub(r"^%?\d+\s*", "", raw)
+        # Remove all percentage patterns (e.g. %15, %100, %300)
+        cleaned = re.sub(r"%\d+\s*", "", raw)
         # Turkish char normalization
         tr_map = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
         cleaned = cleaned.translate(tr_map)

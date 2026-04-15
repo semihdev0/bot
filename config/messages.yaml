@@ -5,29 +5,94 @@
 
 rejection_messages:
 
-  genel_uygun_degil: >
+  # --- Genel ---
+  genel_uygun_degil: >-
     Bonus talebiniz incelenmiş olup mevcut koşulları karşılamamaktadır.
     Detaylı bilgi için canlı destek hattımızdan bilgi alabilirsiniz.
 
-  yatirim_yetersiz: >
-    Yatırım tutarınız bu bonus için gerekli minimum tutarı karşılamamaktadır.
-    Lütfen yeterli tutarda yatırım yaparak tekrar deneyiniz.
+  hesap_pasif: >-
+    Hesabınız aktif durumda değildir.
+    Lütfen müşteri hizmetleri ile iletişime geçiniz.
 
-  hesap_eski: >
-    Bu bonus yalnızca yeni kayıt olan kullanıcılar için geçerlidir.
-    Diğer promosyonlarımız için kampanya sayfamızı inceleyebilirsiniz.
-
-  bakiye_yuksek: >
-    Mevcut bakiyeniz bu bonus türü için eşik değerin üzerindedir.
-
-  aktif_bonus_mevcut: >
+  aktif_bonus_mevcut: >-
     Hesabınızda aktif bir bonus bulunmaktadır.
     Mevcut bonusunuz tamamlandıktan sonra yeni bonus talebinde bulunabilirsiniz.
 
-  bilinmeyen_bonus: >
+  bilinmeyen_bonus: >-
     Bu bonus türü otomatik olarak işlenememektedir.
     Talebiniz manuel inceleme için yöneticiye iletilecektir.
 
-  hesap_pasif: >
-    Hesabınız aktif durumda değildir.
-    Lütfen müşteri hizmetleri ile iletişime geçiniz.
+  # --- İlk Yatırıma Özel %100 Kayıp Bonusu ---
+  ilk_kayip_genel_ret: >-
+    Bonus talebiniz incelenmiş olup mevcut koşulları karşılamamaktadır.
+    Detaylı bilgi için canlı destek hattımızdan bilgi alabilirsiniz.
+
+  ilk_kayip_yatirim_yok: >-
+    Bu bonustan yararlanmak için ilk yatırımınızı yapmanız gerekmektedir.
+    Risksiz yatırım sağlayabilirsiniz. Kaybetmeniz halinde dahi
+    bakiyenizin %100 ü hesabınıza ekleme sağlanacaktır.
+
+  ilk_kayip_bakiye_yuksek: >-
+    Bu bonustan yararlanmak için bakiyenizi 2 tl nin altında olması
+    gerekmektedir. Ardından %100 ilk kayıp bonusunuz tanımlanacaktır.
+
+  # --- %300 Hoşgeldin Bonusu ---
+  hosgeldin_genel_ret: >-
+    Hoşgeldin bonusu talebiniz incelenmiş olup mevcut koşulları
+    karşılamamaktadır. Detaylı bilgi için canlı destek hattımızdan
+    bilgi alabilirsiniz.
+
+  hosgeldin_yatirim_yok: >-
+    Bu bonustan yararlanmak için öncelikle dilediğiniz miktarda yatırım
+    yapmalı ve sonrasında talep etmelisiniz. Bonusunuz otomatik şekilde
+    tanımlanacaktır. Ferrari Casino Bol kazançlar diler. 💸
+
+  hosgeldin_limit_doldu: >-
+    %300 Hoşgeldin Bonsundan yalnızca 3 yatırım adına yararlanılabilir.
+    Daha önce 3 defa yararlanmışsınız. Ferrari Casinodaki diğer eşsiz
+    bonuslara göz atabilirsiniz! Bol kazançlar!
+
+  # --- %25 Anlık Kayıp Bonusu ---
+  anlik_kayip_genel_ret: >-
+    Kayıp bonusu talebiniz incelenmiş olup mevcut koşulları
+    karşılamamaktadır.
+
+  anlik_kayip_yatirim_yok: >-
+    Bu bonustan yararlanmak için öncelikle dilediğiniz miktarda yatırım
+    yapmalı ve sonrasında kayıp durumunda bu bonusu talep etmelisiniz.
+    Bonusunuz otomatik şekilde tanımlanacaktır. Ferrari Casino Bol
+    kazançlar diler.
+
+  anlik_kayip_tarih_gecmis: >-
+    Kayıp Bonusu bonus kurallarında da yazıldığı üzere ''Yalnızca son
+    24 saatteki kayıplarınız için geçerlidir.'' Diğer eşsiz
+    bonuslarımıza göz atabilirsiniz. Bol kazançlar!
+
+  anlik_kayip_bakiye_yuksek: >-
+    Bu bonustan yararlanmak için bakiyenizi 5 tl nin altında olması
+    gerekmektedir.
+
+  anlik_kayip_ilk_kayip_almis: >-
+    Halihazırda son yatırımınız için %100 ilk kayıp bonusu almış
+    olduğunuzdan dolayı 2. bir kayıp bonusu alamazsınız. Ferrari Casino
+    Bol kazançlar diler!
+
+  # --- Haftalık %10 Kayıp Bonusu ---
+  haftalik_kayip_genel_ret: >-
+    Haftalık kayıp bonusu talebiniz incelenmiş olup mevcut koşulları
+    karşılamamaktadır.
+
+  haftalik_kayip_yatirim_yok: >-
+    Bu bonustan yararlanmak için öncelikle dilediğiniz miktarda yatırım
+    yapmalı ve sonrasında kayıp durumunda talep etmelisiniz. Bonusunuz
+    otomatik şekilde tanımlanacaktır. Ferrari Casino Bol kazançlar diler.
+
+  haftalik_kayip_kar_yapmis: >-
+    Son 7 gün içerisinde çekiminiz yatırımınızdan yüksek olduğundan
+    dolayı kaybınız bulunmamaktadır. Bol kazançlar dileriz!
+
+  # --- %15 Kripto Yatırım Bonusu ---
+  kripto_yatirim_yok: >-
+    Kripto yatırım yöntemi ile yatırımınız bulunmamaktadır. Lütfen kripto
+    yatırım yöntemi ile yatırım sağlayıp bonus talebi veriniz. Bol
+    kazançlar dileriz!

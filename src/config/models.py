@@ -91,6 +91,7 @@ class BonusCalculation(BaseModel):
     tiers: list[TierEntry] | None = None
     min_amount: Decimal | None = None
     max_amount: Decimal | None = None
+    turnover: int | None = None
 
 
 class Rule(BaseModel):

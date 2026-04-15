@@ -22,7 +22,9 @@ from playwright.async_api import Page
 from src.actions.executor import BonusActionExecutor
 from src.config.loader import AppConfig
 from src.engine import rule_engine
-from src.engine.models import BonusRequest
+from decimal import Decimal
+
+from src.engine.models import BonusRequest, Decision
 from src.monitoring.health import write_heartbeat
 from src.pages.bonus_list_page import BonusListPage
 from src.pages.user_profile_page import UserProfilePage
@@ -116,6 +118,12 @@ class BonusProcessor:
         logger.info("cycle_completed", **self._stats)
         return self._stats["processed"]
 
+    # Bonus types that are auto-approved without profile checks
+    DIRECT_APPROVE_TYPES = frozenset({
+        "spor_kayip_bonusu",
+        "cevirmsiz_2x_yap_5x_cek",
+    })
+
     async def _process_single_request(
         self,
         request: BonusRequest,
@@ -133,26 +141,45 @@ class BonusProcessor:
 
         settings = self.config.settings
 
-        # Step 1: Navigate to user profile to get their data
-        profile_page = UserProfilePage(self.page, self.config.selectors)
-        await profile_page.navigate_to_profile(
-            base_url,
-            settings.backoffice.user_profile_path_template,
-            request.user_id,
-        )
+        # Check if this bonus type is auto-approved (no profile check needed)
+        if request.bonus_type in self.DIRECT_APPROVE_TYPES:
+            decision = Decision(
+                action="approve",
+                bonus_amount=Decimal("0"),
+                matched_rule_name="direct_approve",
+                confidence="rule_matched",
+            )
+            logger.info(
+                "direct_approve",
+                request_id=request.request_id,
+                bonus_type=request.bonus_type,
+            )
+        else:
+            # Step 1: Navigate to user profile to get their data
+            profile_page = UserProfilePage(self.page, self.config.selectors)
+            await profile_page.navigate_to_profile(
+                base_url,
+                settings.backoffice.user_profile_path_template,
+                request.user_id,
+            )
 
-        # Step 2: Extract profile data
-        profile = await profile_page.extract_profile(
-            request.user_id, request.username
-        )
+            # Step 2: Extract profile data (cards + tabs)
+            profile = await profile_page.extract_profile(
+                request.user_id, request.username
+            )
 
-        # Step 3: Evaluate rules
-        decision = rule_engine.evaluate(
-            profile=profile,
-            request=request,
-            rules_config=self.config.bonus_rules,
-            messages=self.config.messages.rejection_messages,
-        )
+            # Step 3: Evaluate rules
+            decision = rule_engine.evaluate(
+                profile=profile,
+                request=request,
+                rules_config=self.config.bonus_rules,
+                messages=self.config.messages.rejection_messages,
+            )
+
+            # Step 4: Navigate back to bonus list
+            await bonus_list.navigate_to_list(
+                base_url, settings.backoffice.bonus_list_path
+            )
 
         logger.info(
             "decision_made",
@@ -160,15 +187,10 @@ class BonusProcessor:
             action=decision.action,
             matched_rule=decision.matched_rule_name,
             bonus_amount=str(decision.bonus_amount) if decision.bonus_amount else None,
-        )
-
-        # Step 4: Navigate back to bonus list
-        await bonus_list.navigate_to_list(
-            base_url, settings.backoffice.bonus_list_path
+            bonus_turnover=decision.bonus_turnover,
         )
 
         # Step 5: Find the row again and get action buttons
-        # Re-fetch rows since we navigated away
         await asyncio.sleep(1)
         action_buttons = await bonus_list.get_row_action_buttons(row_index)
 
