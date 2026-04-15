@@ -73,21 +73,8 @@ async def main():
         await asyncio.sleep(3)
         print(f"    Current URL: {page.url}")
 
-        # --- CLICK BEKLEMEDE TAB ---
-        print("\n[3] Clicking 'Beklemede' filter tab...")
-        try:
-            beklemede_tab = page.get_by_text("Beklemede")
-            if await beklemede_tab.count() > 0:
-                await beklemede_tab.first.click()
-                await asyncio.sleep(2)
-                print("    Beklemede tab clicked!")
-            else:
-                print("    Beklemede tab not found, continuing with current view")
-        except Exception as e:
-            print(f"    Tab click error: {e}")
-
-        # --- FIND A ROW (all rows are pending on Beklemede tab) ---
-        print("\n[4] Looking for rows...")
+        # --- FIND A ROW (page already shows pending requests) ---
+        print("\n[3] Looking for rows...")
         rows = page.locator("table tbody tr")
         row_count = await rows.count()
         print(f"    Total rows: {row_count}")

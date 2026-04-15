@@ -22,27 +22,11 @@ class BonusListPage(BasePage):
     _NOTIFICATION_KEYWORDS = ("yeni bonus", "bonus talebi", "new bonus")
 
     async def navigate_to_list(self, base_url: str, path: str) -> None:
-        """Navigate to the bonus requests list page and select Beklemede tab."""
+        """Navigate to the bonus requests list page."""
         url = f"{base_url.rstrip('/')}{path}"
         await self.navigate(url)
         await asyncio.sleep(2)  # Wait for table to load
-
-        # Click the "Beklemede" filter tab so only pending requests are shown
-        await self._click_pending_filter()
         logger.info("bonus_list_loaded", url=url)
-
-    async def _click_pending_filter(self) -> None:
-        """Click the 'Beklemede' filter tab at the top of the page."""
-        try:
-            pending_tab = self.locate("pending_filter")
-            if await pending_tab.count() > 0:
-                await pending_tab.click()
-                await asyncio.sleep(2)
-                logger.info("pending_filter_clicked")
-            else:
-                logger.warning("pending_filter_not_found")
-        except Exception as e:
-            logger.warning("pending_filter_click_failed", error=str(e))
 
     async def set_rows_per_page(self, count: int = 50) -> None:
         """Change the 'Satır' (rows per page) dropdown to show more rows.
@@ -119,7 +103,6 @@ class BonusListPage(BasePage):
         """Reload the current page to reflect new requests."""
         await self.page.reload(wait_until="domcontentloaded")
         await asyncio.sleep(2)  # Wait for table to re-render
-        await self._click_pending_filter()
         logger.info("page_reloaded")
 
     async def has_pending_notification(self) -> bool:
