@@ -278,7 +278,13 @@ class UserProfile(BaseModel):
     @computed_field
     @property
     def hesap_aktif(self) -> bool:
-        """Whether the account is active."""
+        """Whether the account is active.
+
+        If status could not be extracted (empty string), assume active.
+        A user who can submit bonus requests must have an active account.
+        """
+        if not self.durum or self.durum.strip() == "":
+            return True
         return _tr_lower(self.durum) in ("aktif", "active")
 
     @computed_field

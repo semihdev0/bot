@@ -98,12 +98,26 @@ class UserProfilePage(BasePage):
         )
 
         # --- Account Information card ---
-        durum = await self._extract_value_by_labels("Status", "Durum")
+        durum = await self._extract_value_by_labels(
+            "Status", "Account Status", "Durum", "Hesap Durumu"
+        )
         kayit_tarihi_raw = await self._extract_value_by_labels(
-            "Registered", "Kayıt Tarihi"
+            "Registered", "Registration Date", "Kayıt Tarihi"
         )
         son_giris_raw = await self._extract_value_by_labels(
-            "Last Login", "Son Giriş"
+            "Last Login", "Last Sign In", "Son Giriş"
+        )
+
+        # Debug: log all extracted raw values
+        logger.info(
+            "profile_raw_values",
+            user_id=user_id,
+            bakiye=bakiye[:30] if bakiye else "",
+            toplam_yatirim=toplam_yatirim[:30] if toplam_yatirim else "",
+            durum=durum[:30] if durum else "EMPTY",
+            yatirim_sayisi=yatirim_sayisi_raw[:30] if yatirim_sayisi_raw else "",
+            son_yatirim=son_yatirim_raw[:30] if son_yatirim_raw else "",
+            aktif_bonus=(await self._extract_aktif_bonus())[:30],
         )
 
         # --- Active Bonus ---
