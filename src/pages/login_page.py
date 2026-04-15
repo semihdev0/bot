@@ -25,7 +25,12 @@ class LoginPage(BasePage):
         logger.info("login_starting", url=login_url)
 
         await self.navigate(login_url)
-        await asyncio.sleep(2)  # Wait for page to fully render
+
+        # Wait for the login form to actually render (SPA may load slowly)
+        await self.page.wait_for_selector(
+            "input[name='companyId']", state="visible", timeout=30000
+        )
+        await asyncio.sleep(1)
 
         # Fill login form in correct order: Company ID first
         await self.fill("company_code_input", credentials.company_code)
