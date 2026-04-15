@@ -83,12 +83,24 @@ class BonusListPage(BasePage):
             }
             window.__bonusObserver = new MutationObserver((mutations) => {
                 for (const m of mutations) {
+                    // Strategy 1: New nodes added (original)
                     for (const n of m.addedNodes) {
                         if (n.nodeType === 1) {
                             const txt = (n.textContent || '').toLowerCase();
-                            if (txt.includes('yeni bonus') || txt.includes('new bonus')) {
+                            if (txt.includes('yeni bonus') || txt.includes('new bonus') || txt.includes('bonus talebi')) {
                                 window.__bonusToastDetected = true;
                                 window.__bonusToastText = (n.textContent || '').substring(0, 200);
+                            }
+                        }
+                    }
+                    // Strategy 2: Text/attribute changes on existing Sonner toast elements
+                    if (m.type === 'characterData' || m.type === 'attributes') {
+                        const el = m.target.nodeType === 1 ? m.target : m.target.parentElement;
+                        if (el) {
+                            const txt = (el.textContent || '').toLowerCase();
+                            if (txt.includes('yeni bonus') || txt.includes('new bonus') || txt.includes('bonus talebi')) {
+                                window.__bonusToastDetected = true;
+                                window.__bonusToastText = (el.textContent || '').substring(0, 200);
                             }
                         }
                     }
@@ -96,7 +108,10 @@ class BonusListPage(BasePage):
             });
             window.__bonusObserver.observe(document.body, {
                 childList: true,
-                subtree: true
+                subtree: true,
+                characterData: true,
+                attributes: true,
+                attributeFilter: ['data-front-toast-height', 'data-visible', 'style']
             });
         }"""
         )
@@ -132,6 +147,7 @@ class BonusListPage(BasePage):
             elapsed += poll_interval
 
             try:
+                # Check 1: MutationObserver flag
                 detected = await self.page.evaluate(
                     "() => window.__bonusToastDetected"
                 )
@@ -144,6 +160,26 @@ class BonusListPage(BasePage):
                     await self.page.evaluate(
                         "() => { window.__bonusToastDetected = false; window.__bonusToastText = ''; }"
                     )
+                    return True
+
+                # Check 2: Direct Sonner toaster scan (fallback)
+                # Sonner may update existing elements without triggering addedNodes
+                sonner_detected = await self.page.evaluate(
+                    """() => {
+                    const toaster = document.querySelector('[data-sonner-toaster]');
+                    if (!toaster) return false;
+                    const items = toaster.querySelectorAll('li');
+                    for (const li of items) {
+                        const txt = (li.textContent || '').toLowerCase();
+                        if (txt.includes('yeni bonus') || txt.includes('new bonus') || txt.includes('bonus talebi')) {
+                            return true;
+                        }
+                    }
+                    return false;
+                }"""
+                )
+                if sonner_detected:
+                    logger.info("notification_detected_sonner_scan")
                     return True
             except Exception:
                 # Page might have navigated away – reinstall observer
@@ -384,12 +420,20 @@ class BonusListPage(BasePage):
 
             # The #number in the PLAYER column is the player ID.
             # Profile URL is /players/{player_id}, so we use this as user_id.
-            # For request tracking we need a unique key per request,
-            # so we combine player_id with bonus_type.
             player_id = request_id  # #number = player ID
 
+            # Extract date column for unique request ID
+            date_sel = self.selectors.get_nested(
+                self.page_name, "row_columns", "date"
+            )
+            date_text = await self._safe_text(row, date_sel.value)
+            # Create unique request ID: player_id + bonus_type + date hash
+            # This ensures same user submitting same bonus twice gets different IDs
+            date_hash = re.sub(r"[^0-9]", "", date_text)[-8:]  # last 8 digits of date
+            unique_id = f"{player_id}_{bonus_type_key}_{date_hash}"
+
             return BonusRequest(
-                request_id=f"{player_id}_{bonus_type_key}",
+                request_id=unique_id,
                 user_id=player_id,  # Numeric ID for /players/{id} URL
                 username=player_name,
                 bonus_type=bonus_type_key,
