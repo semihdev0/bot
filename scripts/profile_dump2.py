@@ -33,10 +33,24 @@ async def main():
         await asyncio.sleep(5)
         await page.goto(
             os.environ["BACKOFFICE_URL"] + "/players/TUTurgut0101",
-            wait_until="commit",
+            wait_until="networkidle",
             timeout=60000,
         )
-        await asyncio.sleep(5)
+        # Wait for profile content to render (Next.js hydration)
+        for attempt in range(15):
+            count = await page.evaluate("""() => {
+                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                let c = 0;
+                while (walker.nextNode()) {
+                    if (walker.currentNode.textContent.includes('₺')) c++;
+                }
+                return c;
+            }""")
+            print(f"  Attempt {attempt}: {count} text nodes with ₺")
+            if count > 2:
+                break
+            await asyncio.sleep(1)
+        await asyncio.sleep(2)
 
         # Take screenshot
         await page.screenshot(path="/home/user/bot/profile_screenshot.png", full_page=True)

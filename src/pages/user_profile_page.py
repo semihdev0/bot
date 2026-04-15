@@ -44,11 +44,49 @@ class UserProfilePage(BasePage):
     async def navigate_to_profile(
         self, base_url: str, path_template: str, user_id: str
     ) -> None:
-        """Navigate to a user's profile page."""
+        """Navigate to a user's profile page.
+
+        The backoffice is a Next.js SPA.  After navigation the shell
+        loads immediately but profile data is fetched asynchronously.
+        We must wait until the profile cards have rendered before
+        attempting to extract values.
+        """
         path = path_template.format(user_id=user_id)
         url = f"{base_url.rstrip('/')}{path}"
-        await self.navigate(url)
-        await asyncio.sleep(2)
+        await self.page.goto(url, wait_until="networkidle", timeout=60000)
+
+        # Wait for profile content to render (Next.js hydration + data fetch)
+        # Look for any element containing ₺ (balance/deposit values) as a
+        # signal that profile data has loaded.
+        for attempt in range(10):
+            text_nodes = await self.page.evaluate(
+                """() => {
+                const walker = document.createTreeWalker(
+                    document.body, NodeFilter.SHOW_TEXT
+                );
+                let count = 0;
+                while (walker.nextNode()) {
+                    const t = walker.currentNode.textContent;
+                    if (t.includes('₺') || t.includes('Balance') || t.includes('Bakiye')) {
+                        count++;
+                    }
+                }
+                return count;
+            }"""
+            )
+            if text_nodes > 2:
+                logger.debug(
+                    "profile_content_loaded",
+                    user_id=user_id,
+                    attempt=attempt,
+                    indicators=text_nodes,
+                )
+                break
+            await asyncio.sleep(1)
+        else:
+            logger.warning("profile_content_slow_load", user_id=user_id)
+            await asyncio.sleep(3)  # Last resort extra wait
+
         logger.debug("user_profile_loaded", user_id=user_id)
 
     async def navigate_via_username_link(self, link_locator) -> None:
