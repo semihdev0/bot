@@ -107,6 +107,29 @@ class UserProfilePage(BasePage):
 
         Panel UI can be English or Turkish - tries both.
         """
+        # --- DEBUG: Dump page text to understand structure ---
+        all_texts = await self.page.evaluate(
+            """() => {
+            const results = [];
+            const walker = document.createTreeWalker(
+                document.body, NodeFilter.SHOW_TEXT
+            );
+            while (walker.nextNode()) {
+                const t = walker.currentNode.textContent.trim();
+                if (t.length > 1 && t.length < 80) {
+                    results.push(t);
+                }
+            }
+            return results;
+        }"""
+        )
+        logger.info(
+            "profile_page_texts",
+            user_id=user_id,
+            total=len(all_texts),
+            texts=str(all_texts[:40]),
+        )
+
         # --- Financial Information card ---
         bakiye = await self._extract_value_by_labels("Balance", "Bakiye")
         bonus_bakiye = await self._extract_value_by_labels("Bonus")
