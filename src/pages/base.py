@@ -82,5 +82,5 @@ class BasePage:
 
     async def navigate(self, url: str) -> None:
         """Navigate to a URL and wait for the page to load."""
-        await self.page.goto(url, wait_until="domcontentloaded")
+        await self.page.goto(url, wait_until="commit", timeout=60000)
         logger.debug("navigated", url=url)
