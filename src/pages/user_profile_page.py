@@ -349,8 +349,20 @@ class UserProfilePage(BasePage):
     def _parse_decimal(text: str) -> Decimal:
         """Parse a decimal value from Betronix text format.
 
-        Handles: '13.915 ₺', '100 ₺', '2.000 ₺', '+1.000 ₺', '3.000₺'
-        Turkish format uses dots as thousands separator: 13.915 = 13915
+        Handles Turkish number formatting:
+          '13.915 ₺'      → 13915  (dot = thousands separator)
+          '1.000.000 ₺'   → 1000000
+          '2.500,50 ₺'    → 2500.50  (comma = decimal separator)
+          '100 ₺'          → 100
+          '+1.000 ₺'       → 1000
+          '-500 ₺'         → -500
+          '3.50'           → 3.50  (dot = decimal when not 3 digits)
+
+        Rules:
+        - If comma exists → dots are thousands, comma is decimal
+        - If only dots → check if all parts after first have exactly
+          3 digits (then dots are thousands separators)
+        - Otherwise → dot is decimal separator
         """
         cleaned = (
             text.replace("₺", "")
@@ -362,17 +374,28 @@ class UserProfilePage(BasePage):
         if not cleaned or cleaned == "-":
             return Decimal("0")
 
+        # Preserve negative sign
+        negative = cleaned.startswith("-")
+        if negative:
+            cleaned = cleaned[1:]
+
         if "," in cleaned:
+            # Turkish decimal format: 1.000.000,50 → 1000000.50
             cleaned = cleaned.replace(".", "").replace(",", ".")
         else:
             parts = cleaned.split(".")
-            if len(parts) == 2 and len(parts[1]) == 3:
-                cleaned = cleaned.replace(".", "")
-            elif len(parts) > 2:
-                cleaned = cleaned.replace(".", "")
+            if len(parts) >= 2:
+                # Check if ALL parts after the first have exactly 3 digits
+                # e.g. "1.000.000" → ["1", "000", "000"] → all 3-digit → thousands
+                # e.g. "3.50" → ["3", "50"] → "50" is 2 digits → decimal
+                all_thousands = all(len(p) == 3 for p in parts[1:])
+                if all_thousands:
+                    cleaned = cleaned.replace(".", "")
+                # else: single dot with non-3-digit part → it's a decimal point
 
         try:
-            return Decimal(cleaned)
+            result = Decimal(cleaned)
+            return -result if negative else result
         except (InvalidOperation, ValueError):
             return Decimal("0")
 

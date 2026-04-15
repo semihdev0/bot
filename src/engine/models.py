@@ -8,6 +8,16 @@ from typing import Literal
 
 from pydantic import BaseModel, computed_field
 
+# Turkish char map for case-insensitive comparison.
+# İ.lower() produces "i̇" (i + combining dot above) which breaks simple
+# string matching.  We normalize to ASCII before any comparison.
+_TR_MAP = str.maketrans("çğıöşüÇĞİÖŞÜ", "cgiosuCGIOSU")
+
+
+def _tr_lower(text: str) -> str:
+    """Lowercase with Turkish character normalization."""
+    return text.translate(_TR_MAP).lower()
+
 
 # --- History Entry Models ---
 
@@ -65,8 +75,12 @@ class BonusHistoryEntry(BaseModel):
     @computed_field
     @property
     def is_approved(self) -> bool:
-        """Whether this bonus was actually approved (Aktif or Kullanıldı)."""
-        return self.status.lower() in ("aktif", "aktif", "kullanıldı", "kullanildi")
+        """Whether this bonus was actually approved (Aktif or Kullanıldı).
+
+        Uses Turkish-safe normalization so İ/ı and Ü/ü variants all match.
+        """
+        s = _tr_lower(self.status)
+        return s in ("aktif", "kullanildi", "active", "used")
 
 
 # --- History Collection Models ---
@@ -106,11 +120,17 @@ class DepositHistory(BaseModel):
 
     @property
     def last_successful(self) -> DepositEntry | None:
-        """Most recent successful deposit."""
-        successful = self.get_successful()
-        if not successful:
-            return None
-        return min(successful, key=lambda e: e.hours_ago)
+        """Most recent successful deposit (with a valid date).
+
+        Entries without a date are excluded to avoid selecting
+        stale/broken records as 'most recent'.
+        """
+        dated = [e for e in self.get_successful() if e.date is not None]
+        if not dated:
+            # Fall back to any successful if none have dates
+            successful = self.get_successful()
+            return successful[0] if successful else None
+        return min(dated, key=lambda e: e.hours_ago)
 
 
 class WithdrawalHistory(BaseModel):
@@ -139,12 +159,15 @@ class BonusHistory(BaseModel):
     entries: list[BonusHistoryEntry] = []
 
     def count_approved(self, bonus_name_contains: str) -> int:
-        """Count approved bonuses matching a name pattern."""
-        pattern = bonus_name_contains.lower()
+        """Count approved bonuses matching a name pattern.
+
+        Uses Turkish-safe case normalization (İ→I, ş→s, etc.)
+        """
+        pattern = _tr_lower(bonus_name_contains)
         return sum(
             1
             for e in self.entries
-            if e.is_approved and pattern in e.bonus_name.lower()
+            if e.is_approved and pattern in _tr_lower(e.bonus_name)
         )
 
     def has_approved_after(
@@ -153,12 +176,12 @@ class BonusHistory(BaseModel):
         """Check if a bonus was approved after a given date."""
         if after_date is None:
             return False
-        pattern = bonus_name_contains.lower()
+        pattern = _tr_lower(bonus_name_contains)
         return any(
             e
             for e in self.entries
             if e.is_approved
-            and pattern in e.bonus_name.lower()
+            and pattern in _tr_lower(e.bonus_name)
             and e.date is not None
             and e.date >= after_date
         )
@@ -246,7 +269,7 @@ class UserProfile(BaseModel):
     @property
     def hesap_aktif(self) -> bool:
         """Whether the account is active."""
-        return self.durum.lower() in ("aktif", "active")
+        return _tr_lower(self.durum) in ("aktif", "active")
 
     @computed_field
     @property

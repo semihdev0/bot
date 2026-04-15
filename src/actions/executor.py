@@ -65,7 +65,8 @@ class BonusActionExecutor:
                         "input[name*='amount']"
                     ).first
                     if await amount_input.count() > 0:
-                        await amount_input.fill(str(int(decision.bonus_amount)))
+                        amount_str = str(int(decision.bonus_amount)) if decision.bonus_amount else "0"
+                        await amount_input.fill(amount_str)
 
                     # Fill custom turnover if specified
                     if decision.bonus_turnover is not None:
@@ -140,10 +141,13 @@ class BonusActionExecutor:
             if await confirm_btn.count() > 0:
                 await confirm_btn.click()
             else:
-                # Fallback: try "Onayla" or generic confirm
-                confirm_alt = self.page.get_by_text("Onayla", exact=True).first
-                if await confirm_alt.count() > 0:
-                    await confirm_alt.click()
+                # SAFETY: Never fall back to "Onayla" for a reject action.
+                # If "Reddet" button is missing, abort to avoid accidental approval.
+                await self._try_close_modal()
+                raise ActionExecutionError(
+                    f"Reddet button not found for request {request_id} - "
+                    "aborting to prevent accidental approval"
+                )
 
             await asyncio.sleep(1)
 

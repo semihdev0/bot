@@ -22,12 +22,21 @@ def _get_field_value(profile: UserProfile, field: str) -> Any:
 
 
 def _to_decimal(value: Any) -> Decimal:
-    """Safely convert a value to Decimal for comparison."""
+    """Safely convert a value to Decimal for comparison.
+
+    Returns Decimal("0") for unconvertible values, but logs a warning
+    so silent data corruption is detectable.
+    """
     if isinstance(value, Decimal):
         return value
+    if isinstance(value, bool):
+        return Decimal("1") if value else Decimal("0")
+    if isinstance(value, (int, float)):
+        return Decimal(str(value))
     try:
         return Decimal(str(value))
     except (InvalidOperation, TypeError, ValueError):
+        logger.warning("decimal_conversion_failed", value=repr(value))
         return Decimal("0")
 
 
@@ -68,6 +77,10 @@ def _evaluate_condition(profile: UserProfile, condition: Condition) -> bool:
         return str(target) in str(field_value)
 
     if op == "between":
+        if not isinstance(target, (list, tuple)) or len(target) < 2:
+            raise ValueError(
+                f"'between' operator requires [low, high] list, got: {target}"
+            )
         fv = _to_decimal(field_value)
         low = _to_decimal(target[0])
         high = _to_decimal(target[1])

@@ -9,6 +9,7 @@ import structlog
 from playwright.async_api import Browser, BrowserContext, Page, async_playwright
 
 from src.config.models import BrowserConfig
+from src.utils.exceptions import BrowserError
 
 logger = structlog.get_logger()
 
@@ -32,20 +33,31 @@ class BrowserManager:
         logger.info("browser_started")
 
     async def cleanup(self) -> None:
-        """Close browser and playwright."""
-        if self._browser:
-            await self._browser.close()
+        """Close browser and playwright safely."""
+        try:
+            if self._browser:
+                await self._browser.close()
+        except Exception as e:
+            logger.warning("browser_close_error", error=str(e))
+        finally:
             self._browser = None
-        if self._playwright:
-            await self._playwright.stop()
+
+        try:
+            if self._playwright:
+                await self._playwright.stop()
+        except Exception as e:
+            logger.warning("playwright_stop_error", error=str(e))
+        finally:
             self._playwright = None
+
         logger.info("browser_closed")
 
     async def new_context(self) -> BrowserContext:
         """Create a new browser context with configured viewport."""
         if self._browser is None:
             await self.start()
-        assert self._browser is not None
+        if self._browser is None:
+            raise BrowserError("Browser failed to start - cannot create context")
         context = await self._browser.new_context(
             viewport={
                 "width": self._config.viewport.width,

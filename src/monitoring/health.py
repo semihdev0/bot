@@ -21,16 +21,19 @@ def write_heartbeat(
     errors: int = 0,
 ) -> None:
     """Write a health status file that external monitors can check."""
-    HEALTH_FILE.parent.mkdir(parents=True, exist_ok=True)
-    data = {
-        "timestamp": datetime.now().isoformat(),
-        "status": status,
-        "stats": {
-            "processed": processed,
-            "approved": approved,
-            "rejected": rejected,
-            "errors": errors,
-        },
-    }
-    HEALTH_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
-    logger.debug("heartbeat_written", status=status)
+    try:
+        HEALTH_FILE.parent.mkdir(parents=True, exist_ok=True)
+        data = {
+            "timestamp": datetime.now().isoformat(),
+            "status": status,
+            "stats": {
+                "processed": processed,
+                "approved": approved,
+                "rejected": rejected,
+                "errors": errors,
+            },
+        }
+        HEALTH_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        logger.debug("heartbeat_written", status=status)
+    except Exception as e:
+        logger.error("heartbeat_write_failed", error=str(e))
