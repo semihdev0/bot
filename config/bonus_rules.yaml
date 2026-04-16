@@ -328,8 +328,22 @@ bonus_types:
   2x_yap_5x_cek_cevrimsiz:
     display_name: "Çevrimsiz 2X Yap 5X Çek"
     default_action: approve
-    default_reject_message_key: "genel_uygun_degil"
-    rules: []
+    default_reject_message_key: "cevrimsiz_yatirim_yok"
+    rules:
+      - name: "Yatırım yok"
+        conditions:
+          - field: "basarili_yatirim_var"
+            operator: "=="
+            value: false
+        action: reject
+        reject_message_key: "cevrimsiz_yatirim_yok"
+
+      - name: "Son 2 saatte yatırım var - onay"
+        conditions:
+          - field: "basarili_yatirim_var"
+            operator: "=="
+            value: true
+        action: approve
 
   # ============================================================
   # Tanınmayan bonus türleri
