@@ -320,6 +320,12 @@ class UserProfile(BaseModel):
 
     @computed_field
     @property
+    def son_2_saat_yatirim_var(self) -> bool:
+        """Whether there's a successful deposit in the last 2 hours."""
+        return len(self.deposits.get_successful_last_hours(2)) > 0
+
+    @computed_field
+    @property
     def son_5_saat_yatirim_var(self) -> bool:
         """Whether there's a successful deposit in the last 5 hours."""
         return len(self.deposits.get_successful_last_hours(5)) > 0

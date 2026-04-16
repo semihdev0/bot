@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import structlog
@@ -28,7 +29,7 @@ from src.engine.models import BonusRequest, Decision
 from src.monitoring.health import write_heartbeat
 from src.pages.bonus_list_page import BonusListPage
 from src.pages.user_profile_page import UserProfilePage
-from src.utils.exceptions import ActionExecutionError, NavigationError
+from src.utils.exceptions import ActionExecutionError, NavigationError, SessionExpiredError
 from src.utils.retry import retry
 
 logger = structlog.get_logger()
@@ -45,6 +46,7 @@ class BonusProcessor:
         self._processed_ids: set[str] = set()
         self._load_processed_ids()
         self._stats = {"processed": 0, "approved": 0, "rejected": 0, "errors": 0}
+        self._session_start = datetime.now()
 
     def _load_processed_ids(self) -> None:
         if PROCESSED_IDS_FILE.exists():
@@ -54,6 +56,32 @@ class BonusProcessor:
                 logger.info("processed_ids_loaded", count=len(self._processed_ids))
             except Exception:
                 self._processed_ids = set()
+
+    async def _check_session_alive(self) -> None:
+        """Verify the browser session is still valid.
+
+        Raises SessionExpiredError if the page was redirected to login
+        or the page context is dead.
+        """
+        try:
+            current_url = self.page.url
+            if "login" in current_url.lower():
+                logger.warning("session_expired_redirected_to_login", url=current_url)
+                raise SessionExpiredError("Redirected to login page")
+
+            await self.page.evaluate("() => document.readyState")
+        except SessionExpiredError:
+            raise
+        except Exception as e:
+            logger.warning("session_check_failed", error=str(e))
+            raise SessionExpiredError(f"Page unresponsive: {e}")
+
+    def _session_needs_refresh(self) -> bool:
+        """Check if the session has been active too long and needs re-login."""
+        max_age = timedelta(
+            minutes=self.config.settings.session.relogin_interval_minutes
+        )
+        return datetime.now() - self._session_start > max_age
 
     def _save_processed_ids(self) -> None:
         ids_list = list(self._processed_ids)
@@ -78,6 +106,9 @@ class BonusProcessor:
         3. Process rows bottom-to-top (oldest first)
         4. Move to previous page, repeat
         5. Continue until page 1 is done
+
+        Raises SessionExpiredError when the session expires or needs
+        refresh, so the outer main loop can re-login.
         """
         settings = self.config.settings
         base_url = self.config.credentials.url
@@ -99,6 +130,14 @@ class BonusProcessor:
 
         # Enter the notification-driven loop
         while True:
+            # Check if session needs re-login (prevents infinite loop without re-auth)
+            if self._session_needs_refresh():
+                logger.info("session_refresh_needed", age_minutes=self.config.settings.session.relogin_interval_minutes)
+                raise SessionExpiredError("Scheduled session refresh")
+
+            # Verify session is still alive (not kicked to login page)
+            await self._check_session_alive()
+
             # Make sure we're back on page 1 for notification watching
             await bonus_list.go_to_first_page()
 
@@ -109,6 +148,9 @@ class BonusProcessor:
             got_notification = await bonus_list.wait_for_notification(
                 timeout_seconds=settings.polling.notification_timeout_seconds,
             )
+
+            # Re-check session after waiting (could have been kicked while waiting)
+            await self._check_session_alive()
 
             if got_notification:
                 # Reload the page so the new request appears in the table

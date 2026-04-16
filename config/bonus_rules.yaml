@@ -327,7 +327,7 @@ bonus_types:
   # ============================================================
   2x_yap_5x_cek_cevrimsiz:
     display_name: "Çevrimsiz 2X Yap 5X Çek"
-    default_action: approve
+    default_action: reject
     default_reject_message_key: "cevrimsiz_yatirim_yok"
     rules:
       - name: "Yatırım yok"
@@ -340,7 +340,7 @@ bonus_types:
 
       - name: "Son 2 saatte yatırım var - onay"
         conditions:
-          - field: "basarili_yatirim_var"
+          - field: "son_2_saat_yatirim_var"
             operator: "=="
             value: true
         action: approve

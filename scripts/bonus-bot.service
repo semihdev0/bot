@@ -5,15 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=user
-Group=user
+User=root
 WorkingDirectory=/home/user/bot
 
-ExecStart=/home/user/bot/.venv/bin/python -m src.main
+ExecStart=/home/user/bot/venv/bin/python -m src.main
 Restart=always
 RestartSec=10
-StartLimitIntervalSec=300
-StartLimitBurst=5
+StartLimitIntervalSec=600
+StartLimitBurst=10
 
 Environment=PYTHONUNBUFFERED=1
 Environment=HOME=/home/user
@@ -23,15 +22,9 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=bonus-bot
 
-# Security hardening
-NoNewPrivileges=true
-ProtectSystem=strict
-ReadWritePaths=/home/user/bot /home/user/.cache
-PrivateTmp=true
-
 # Resource limits
-MemoryMax=1G
-TasksMax=64
+MemoryMax=2G
+TasksMax=128
 
 [Install]
 WantedBy=multi-user.target
