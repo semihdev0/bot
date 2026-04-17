@@ -61,7 +61,8 @@ class BonusProcessor:
         """Verify the browser session is still valid.
 
         Raises SessionExpiredError if the page was redirected to login
-        or the page context is dead.
+        or the page context is dead.  Called at every critical point so
+        session loss is detected immediately, not just every 60 minutes.
         """
         try:
             current_url = self.page.url
@@ -75,6 +76,19 @@ class BonusProcessor:
         except Exception as e:
             logger.warning("session_check_failed", error=str(e))
             raise SessionExpiredError(f"Page unresponsive: {e}")
+
+    @staticmethod
+    def _is_session_error(e: Exception) -> bool:
+        """Check if an exception indicates the session/browser died."""
+        msg = str(e).lower()
+        session_keywords = (
+            "target closed", "browser has been closed",
+            "connection closed", "session closed",
+            "page closed", "context closed",
+            "navigation failed", "net::err_",
+            "execution context was destroyed",
+        )
+        return any(kw in msg for kw in session_keywords)
 
     def _session_needs_refresh(self) -> bool:
         """Check if the session has been active too long and needs re-login."""
@@ -193,6 +207,7 @@ class BonusProcessor:
 
         # Process current page (which is the last page), then work backwards
         while True:
+            await self._check_session_alive()
             current_page = await bonus_list.get_current_page()
             logger.info("processing_page", page=current_page, total=total_pages)
 
@@ -239,10 +254,16 @@ class BonusProcessor:
                 continue
 
             try:
+                await self._check_session_alive()
                 await self._process_single_request(request, i, base_url, bonus_list)
                 self._processed_ids.add(request.request_id)
                 self._stats["processed"] += 1
+            except SessionExpiredError:
+                raise
             except Exception as e:
+                if self._is_session_error(e):
+                    logger.warning("session_lost_during_processing", error=str(e))
+                    raise SessionExpiredError(f"Session lost: {e}")
                 self._stats["errors"] += 1
                 logger.error(
                     "request_processing_failed",
@@ -419,6 +440,9 @@ class BonusProcessor:
                     base_url, settings.backoffice.bonus_list_path
                 )
 
+            # Check session before evaluating (profile nav may have triggered redirect)
+            await self._check_session_alive()
+
             # Step 2: Evaluate rules
             decision = rule_engine.evaluate(
                 profile=profile,
@@ -435,6 +459,9 @@ class BonusProcessor:
             bonus_amount=str(decision.bonus_amount) if decision.bonus_amount else None,
             bonus_turnover=decision.bonus_turnover,
         )
+
+        # Check session before executing action
+        await self._check_session_alive()
 
         # Step 5: Find the row by request_id (NOT by index – table may have changed)
         await asyncio.sleep(1)
