@@ -226,15 +226,19 @@ class BonusListPage(BasePage):
         except Exception:
             return False
 
-    # Status values that indicate a pending (actionable) request
-    _PENDING_STATUSES = ("pending", "beklemede")
+    # Status values that indicate an ALREADY PROCESSED (non-actionable) request.
+    # We skip these; everything else is treated as pending.
+    _COMPLETED_STATUSES = (
+        "onaylandı", "onaylandi", "approved",
+        "reddedildi", "rejected", "denied",
+        "iptal", "cancelled", "canceled",
+    )
 
     async def get_pending_requests(self, max_count: int = 50) -> list[BonusRequest]:
         """Extract pending bonus requests from the current table page.
 
-        Only rows with "Pending" / "Beklemede" status are included.
-        Rows that are already "Approved", "Rejected", etc. are skipped
-        because they only have a view button (no approve/reject).
+        Rows whose status contains a completed keyword (approved, rejected,
+        cancelled) are skipped.  Everything else is treated as pending.
 
         Returns requests in REVERSE order (bottom-to-top = oldest first)
         so that the oldest pending request is processed first.
@@ -251,17 +255,26 @@ class BonusListPage(BasePage):
                 row = rows_locator.nth(i)
                 request = await self._extract_request_from_row(row, i)
                 if request:
-                    # Only include pending requests
-                    if request.status.lower() in self._PENDING_STATUSES:
-                        requests.append(request)
-                    else:
+                    status_lower = request.status.lower().strip()
+                    is_completed = any(
+                        kw in status_lower for kw in self._COMPLETED_STATUSES
+                    )
+                    if is_completed:
                         skipped += 1
-                        logger.debug(
-                            "row_skipped_not_pending",
+                        logger.info(
+                            "row_skipped_completed",
                             row_index=i,
                             status=request.status,
                             request_id=request.request_id,
                         )
+                    else:
+                        logger.info(
+                            "row_included_as_pending",
+                            row_index=i,
+                            status=request.status,
+                            request_id=request.request_id,
+                        )
+                        requests.append(request)
             except Exception as e:
                 logger.warning("row_extraction_error", row_index=i, error=str(e))
                 continue
@@ -272,7 +285,7 @@ class BonusListPage(BasePage):
         logger.info(
             "pending_requests_extracted",
             count=len(requests),
-            skipped_non_pending=skipped,
+            skipped_completed=skipped,
         )
         return requests
 
