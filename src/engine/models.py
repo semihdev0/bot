@@ -389,6 +389,13 @@ class UserProfile(BaseModel):
             "İLK KAYBINIZA ÖZEL", self.son_yatirim_tarihi
         )
 
+    @computed_field
+    @property
+    def son_7_gun_haftalik_kayip_var(self) -> bool:
+        """Whether user already received haftalık kayıp bonus in the last 7 days."""
+        seven_days_ago = datetime.now() - timedelta(days=7)
+        return self.bonus_history.has_approved_after("HAFTALIK", seven_days_ago)
+
 
 class BonusRequest(BaseModel):
     """A single bonus request from the Betronix pending list."""

@@ -226,6 +226,14 @@ bonus_types:
         action: reject
         reject_message_key: "haftalik_kayip_yatirim_yok"
 
+      - name: "Bu hafta zaten haftalık kayıp almış"
+        conditions:
+          - field: "son_7_gun_haftalik_kayip_var"
+            operator: "=="
+            value: true
+        action: reject
+        reject_message_key: "haftalik_kayip_zaten_almis"
+
       - name: "Net kayıp yok - kâr yapmış"
         conditions:
           - field: "son_7_gun_net_kayip"

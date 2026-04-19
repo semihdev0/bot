@@ -78,6 +78,10 @@ rejection_messages:
     Haftalık kayıp bonusu talebiniz incelenmiş olup mevcut koşulları
     karşılamamaktadır.
 
+  haftalik_kayip_zaten_almis: >-
+    Haftalık kayıp bonusundan bu hafta zaten yararlanmışsınız.
+    Haftada yalnızca 1 kez yararlanabilirsiniz. Bol kazançlar dileriz!
+
   haftalik_kayip_yatirim_yok: >-
     Bu bonustan yararlanmak için öncelikle dilediğiniz miktarda yatırım
     yapmalı ve sonrasında kayıp durumunda talep etmelisiniz. Bonusunuz
