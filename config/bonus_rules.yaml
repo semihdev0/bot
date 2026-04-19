@@ -322,7 +322,44 @@ bonus_types:
           turnover: 6
 
   # ============================================================
-  # 7. %20 Spor Kayıp Bonusu (direkt onay)
+  # 7. Ertesi Gün Nakit Bonusu (kademe sistemi)
+  # ============================================================
+  ertesi_gun_nakit_bonusu:
+    display_name: "Ertesi Gün Nakit Bonusu"
+    default_action: reject
+    default_reject_message_key: "ertesi_gun_yatirim_yok"
+    rules:
+      - name: "Son 24 saatte 1000 TL+ yatırım yok"
+        conditions:
+          - field: "son_24_saat_max_yatirim_tutari"
+            operator: "<"
+            value: 1000
+        action: reject
+        reject_message_key: "ertesi_gun_yatirim_yok"
+
+      - name: "Ertesi gün nakit onay - kademe"
+        conditions:
+          - field: "son_24_saat_max_yatirim_tutari"
+            operator: ">="
+            value: 1000
+        action: approve
+        bonus_calculation:
+          method: "tiered"
+          base_field: "son_24_saat_max_yatirim_tutari"
+          tiers:
+            - min: 1000
+              max: 4999
+              bonus: 100
+            - min: 5000
+              max: 9999
+              bonus: 250
+            - min: 10000
+              max: 24999
+              bonus: 1000
+          turnover: 5
+
+  # ============================================================
+  # 8. %20 Spor Kayıp Bonusu (direkt onay)
   # ============================================================
   spor_kayip_bonusu:
     display_name: "%20 Spor Kayıp Bonusu"

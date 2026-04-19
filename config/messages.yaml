@@ -91,6 +91,11 @@ rejection_messages:
     Son 7 gün içerisinde çekiminiz yatırımınızdan yüksek olduğundan
     dolayı kaybınız bulunmamaktadır. Bol kazançlar dileriz!
 
+  # --- Ertesi Gün Nakit Bonusu ---
+  ertesi_gun_yatirim_yok: >-
+    Katılım için, son 24 saat içinde tek seferde minimum 1.000 TL ve
+    üzeri yatırımınız olması gerekmektedir.
+
   # --- %50 Nakit Jest Bonusu ---
   nakit_jest_genel_ret: >-
     Nakit jest bonusu talebiniz incelenmiş olup mevcut koşulları

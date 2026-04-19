@@ -320,6 +320,15 @@ class UserProfile(BaseModel):
 
     @computed_field
     @property
+    def son_24_saat_max_yatirim_tutari(self) -> Decimal:
+        """Largest single successful deposit in the last 24 hours."""
+        deposits = self.deposits.get_successful_last_hours(24)
+        if not deposits:
+            return Decimal("0")
+        return max(e.amount for e in deposits)
+
+    @computed_field
+    @property
     def son_2_saat_yatirim_var(self) -> bool:
         """Whether there's a successful deposit in the last 2 hours."""
         return len(self.deposits.get_successful_last_hours(2)) > 0
