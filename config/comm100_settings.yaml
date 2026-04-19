@@ -1,0 +1,20 @@
+# Comm100 Chat Bot Ayarlari
+
+api:
+  region: 1
+  timeout_seconds: 30
+  max_retries: 3
+
+polling:
+  interval_seconds: 5
+  max_chats_per_cycle: 20
+  message_fetch_limit: 50
+
+claude:
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 500
+  temperature: 0.7
+  max_context_messages: 10
+
+session:
+  health_interval_seconds: 60

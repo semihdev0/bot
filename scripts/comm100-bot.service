@@ -1,0 +1,15 @@
+[Unit]
+Description=Comm100 Live Chat Bot
+After=network.target
+
+[Service]
+Type=simple
+User=bot
+WorkingDirectory=/home/user/bot
+ExecStart=/home/user/bot/scripts/run_comm100.sh
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

@@ -25,3 +25,4 @@ test-results/
 
 # Bot state
 processed_requests.json
+comm100_chat_state.json

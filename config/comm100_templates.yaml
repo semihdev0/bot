@@ -1,0 +1,52 @@
+# Comm100 - Sablon Yanitlari
+# Anahtar kelime eslesmesi ile hizli yanitlar.
+# Her sablon: keywords (AND/OR), response text, priority.
+
+greeting:
+  keywords: ["merhaba", "selam", "iyi gunler", "iyi aksamlar", "hey"]
+  match_mode: "any"
+  response: >-
+    Merhaba! Size nasil yardimci olabilirim?
+  priority: 100
+
+bonus_inquiry:
+  keywords: ["bonus", "promosyon", "kampanya"]
+  match_mode: "any"
+  response: >-
+    Bonus ve promosyonlarimiz hakkinda bilgi almak istiyorsunuz. Mevcut
+    kampanyalarimizi sitemizin promosyonlar bolumunden goruntuleyebilirsiniz.
+    Belirli bir bonus hakkinda soru sormak isterseniz, lutfen bonus adini belirtin.
+  priority: 80
+
+deposit_help:
+  keywords: ["yatirim", "para yatirma", "havale", "eft", "papara", "kripto"]
+  match_mode: "any"
+  response: >-
+    Yatirim islemleri ile ilgili yardimci olabilirim. Yatirim yontemlerimiz:
+    Papara, Havale/EFT, Kripto Para. Hangi yontemle yatirim yapmak istiyorsunuz?
+  priority: 70
+
+withdrawal_help:
+  keywords: ["cekim", "para cekme", "cekmek"]
+  match_mode: "any"
+  response: >-
+    Cekim isleminiz icin yardimci olayim. Cekim taleplerinizi hesabinizdan
+    olusturabilirsiniz. Islem suresi yonteme gore 15 dakika ile 24 saat
+    arasinda degismektedir.
+  priority: 70
+
+account_issue:
+  keywords: ["hesap", "sifre", "giris yapamiyorum", "login"]
+  match_mode: "any"
+  response: >-
+    Hesabinizla ilgili bir sorun mu yasiyorsunuz? Lutfen sorununuzu
+    detayli bir sekilde aciklayin, size en kisa surede yardimci olalim.
+  priority: 60
+
+farewell:
+  keywords: ["tesekkur", "sag ol", "gorusuruz", "iyi gunler dilerim"]
+  match_mode: "any"
+  response: >-
+    Rica ederim! Baska bir sorunuz olursa her zaman buradayiz.
+    Iyi gunler dileriz!
+  priority: 90
