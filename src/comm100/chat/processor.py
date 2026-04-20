@@ -50,7 +50,7 @@ class ChatProcessor:
 
             for i, item in enumerate(chat_items):
                 try:
-                    await item.click(force=True)
+                    await item.evaluate("el => el.click()")
                     await asyncio.sleep(1)
                     await self._process_current_chat()
                 except Exception as e:

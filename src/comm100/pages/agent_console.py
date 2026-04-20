@@ -181,7 +181,7 @@ class AgentConsolePage:
     async def click_chat(self, index: int = 0) -> None:
         items = await self.get_chat_items()
         if index < len(items):
-            await items[index].click(force=True)
+            await items[index].evaluate("el => el.click()")
             await asyncio.sleep(1)
 
     async def get_visitor_messages(self) -> list[ChatMessage]:
