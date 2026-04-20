@@ -9,7 +9,7 @@ load_dotenv()
 
 LOGIN_URL = "https://secure.comm100.io/signin"
 CONSOLE_URL = (
-    "https://dash15.lively-chat.com/agentconsole/auth.html"
+    f"https://dash15.lively-chat.com/agentconsole/auth.html"
     f"?siteId={os.environ.get('COMM100_SITE_ID', '90008526')}"
 )
 EMAIL = os.environ.get("COMM100_EMAIL", "")

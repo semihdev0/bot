@@ -101,37 +101,42 @@ class AgentConsolePage:
         await asyncio.sleep(3)
 
     async def _handle_forced_login(self) -> None:
-        force_selectors = [
-            "button:has-text('Force')",
-            "button:has-text('force')",
-            "button:has-text('Continue')",
-            "button:has-text('continue')",
-            "button:has-text('Log In')",
-            "button:has-text('Login')",
-            "button:has-text('Yes')",
-            "button:has-text('OK')",
-            "button:has-text('Confirm')",
-            ":has-text('Force') >> button",
-            "[class*='force'] button",
-            "[class*='modal'] button:has-text('Log')",
-            "[class*='modal'] button:has-text('Yes')",
-            "[class*='dialog'] button:has-text('Log')",
-            "[class*='dialog'] button:has-text('Yes')",
-        ]
-        for selector in force_selectors:
-            try:
-                btn = self._page.locator(selector).first
-                if await btn.is_visible(timeout=2000):
-                    await btn.click()
-                    logger.info("forced_login_clicked", selector=selector)
-                    await asyncio.sleep(3)
-                    await self._page.screenshot(
-                        path="/tmp/comm100_04_after_force.png"
-                    )
-                    return
-            except Exception:
-                continue
-        logger.info("no_forced_login_prompt")
+        for attempt in range(3):
+            clicked = False
+            btn_selectors = [
+                "button.MuiButton-root:has-text('OK')",
+                "button:has-text('OK')",
+                "button:has-text('Force')",
+                "button:has-text('Continue')",
+                "button:has-text('Log In')",
+                "button:has-text('Login')",
+                "button:has-text('Yes')",
+                "button:has-text('Confirm')",
+                ".MuiButton-containedPrimary",
+            ]
+            for selector in btn_selectors:
+                try:
+                    btn = self._page.locator(selector).first
+                    if await btn.is_visible(timeout=2000):
+                        text = (await btn.inner_text()).strip()
+                        await btn.click()
+                        logger.info(
+                            "dialog_button_clicked",
+                            selector=selector,
+                            text=text,
+                            attempt=attempt,
+                        )
+                        clicked = True
+                        await asyncio.sleep(3)
+                        break
+                except Exception:
+                    continue
+
+            if not clicked:
+                break
+
+        await self._page.screenshot(path="/tmp/comm100_04_after_dialogs.png")
+        logger.info("dialog_handling_done", url=self._page.url)
 
     async def navigate_to_chats(self) -> None:
         chat_icon = self._page.locator(
