@@ -34,9 +34,11 @@ def load_comm100_credentials() -> Comm100Credentials:
     load_dotenv()
     return Comm100Credentials(
         email=os.environ["COMM100_EMAIL"],
-        api_key=os.environ["COMM100_API_KEY"],
+        password=os.environ["COMM100_PASSWORD"],
         site_id=os.environ["COMM100_SITE_ID"],
-        region=int(os.environ.get("COMM100_REGION", "1")),
+        api_base_url=os.environ.get(
+            "COMM100_API_BASE_URL", "https://api15.lively-chat.com"
+        ),
     )
 
 

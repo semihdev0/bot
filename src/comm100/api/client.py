@@ -1,4 +1,4 @@
-"""Async client for Comm100 Live Chat REST API."""
+"""Async client for Comm100 Live Chat REST API with OAuth authentication."""
 
 from __future__ import annotations
 
@@ -21,32 +21,64 @@ logger = structlog.get_logger()
 
 
 class Comm100Client:
-    """Async client for Comm100 Live Chat REST API."""
+    """Async client for Comm100 Live Chat REST API using OAuth."""
 
     def __init__(
         self, credentials: Comm100Credentials, config: Comm100ApiConfig
     ) -> None:
-        self._base_url = (
-            f"https://api{credentials.region}.comm100.io/api/v4/livechat"
-        )
-        self._global_url = (
-            f"https://api{credentials.region}.comm100.io/api/v4/global"
-        )
-        self._auth = aiohttp.BasicAuth(credentials.email, credentials.api_key)
+        self._credentials = credentials
+        self._base_url = f"{credentials.api_base_url}/api/v4/livechat"
+        self._global_url = f"{credentials.api_base_url}/api/v4/global"
+        self._token_url = f"{credentials.api_base_url}/oauth/token"
         self._site_id = credentials.site_id
         self._timeout = aiohttp.ClientTimeout(total=config.timeout_seconds)
         self._session: aiohttp.ClientSession | None = None
+        self._access_token: str | None = None
 
     async def start(self) -> None:
         self._session = aiohttp.ClientSession(
-            auth=self._auth,
             timeout=self._timeout,
-            headers={
-                "Content-Type": "application/json",
-                "x-api-siteid": self._site_id,
-            },
         )
+        await self._authenticate()
         logger.info("comm100_client_started", base_url=self._base_url)
+
+    async def _authenticate(self) -> None:
+        payload = {
+            "grant_type": "password",
+            "email": self._credentials.email,
+            "password": self._credentials.password,
+            "siteId": self._site_id,
+        }
+        try:
+            async with self._s.post(self._token_url, data=payload) as resp:
+                if resp.status == 401 or resp.status == 400:
+                    body = await resp.text()
+                    raise Comm100AuthError(
+                        f"OAuth failed ({resp.status}): {body}"
+                    )
+                if resp.status >= 400:
+                    body = await resp.text()
+                    raise Comm100ApiError(
+                        f"OAuth error ({resp.status}): {body}"
+                    )
+                data = await resp.json()
+                self._access_token = data.get("access_token")
+                if not self._access_token:
+                    raise Comm100AuthError(
+                        f"No access_token in response: {data}"
+                    )
+                logger.info("comm100_authenticated", email=self._credentials.email)
+        except aiohttp.ClientError as e:
+            raise Comm100ApiError(f"OAuth connection error: {e}") from e
+
+    def _headers(self) -> dict[str, str]:
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-siteid": self._site_id,
+        }
+        if self._access_token:
+            headers["Authorization"] = f"Bearer {self._access_token}"
+        return headers
 
     async def close(self) -> None:
         if self._session and not self._session.closed:
@@ -61,21 +93,23 @@ class Comm100Client:
 
     async def _handle_response(self, resp: aiohttp.ClientResponse) -> dict | list:
         if resp.status == 401:
-            raise Comm100AuthError("Authentication failed. Check email/API key.")
+            logger.warning("token_expired_reauthenticating")
+            await self._authenticate()
+            raise Comm100AuthError("Token expired, re-authenticated.")
         if resp.status == 429:
             raise Comm100RateLimitError("Rate limit exceeded.")
         if resp.status >= 400:
             body = await resp.text()
-            raise Comm100ApiError(
-                f"API error {resp.status}: {body}"
-            )
+            raise Comm100ApiError(f"API error {resp.status}: {body}")
         if resp.status == 204:
             return {}
         return await resp.json()
 
-    @retry(max_attempts=3, retryable=(aiohttp.ClientError, asyncio.TimeoutError))
+    @retry(max_attempts=3, retryable=(aiohttp.ClientError, asyncio.TimeoutError, Comm100AuthError))
     async def get_active_chats(self) -> list[Comm100Chat]:
-        async with self._s.get(f"{self._base_url}/chats") as resp:
+        async with self._s.get(
+            f"{self._base_url}/chats", headers=self._headers()
+        ) as resp:
             data = await self._handle_response(resp)
 
         chats = []
@@ -87,13 +121,14 @@ class Comm100Client:
         logger.debug("active_chats_fetched", count=len(chats))
         return chats
 
-    @retry(max_attempts=3, retryable=(aiohttp.ClientError, asyncio.TimeoutError))
+    @retry(max_attempts=3, retryable=(aiohttp.ClientError, asyncio.TimeoutError, Comm100AuthError))
     async def get_chat_messages(
         self, chat_id: str, limit: int = 50
     ) -> list[Comm100Message]:
         async with self._s.get(
             f"{self._base_url}/chats/{chat_id}/messages",
             params={"pageSize": limit},
+            headers=self._headers(),
         ) as resp:
             data = await self._handle_response(resp)
 
@@ -104,7 +139,7 @@ class Comm100Client:
         messages.sort(key=lambda m: m.timestamp)
         return messages
 
-    @retry(max_attempts=3, retryable=(aiohttp.ClientError, asyncio.TimeoutError))
+    @retry(max_attempts=3, retryable=(aiohttp.ClientError, asyncio.TimeoutError, Comm100AuthError))
     async def send_message(self, chat_id: str, content: str) -> None:
         payload = {
             "message": content,
@@ -113,14 +148,16 @@ class Comm100Client:
         async with self._s.post(
             f"{self._base_url}/chats/{chat_id}/messages",
             json=payload,
+            headers=self._headers(),
         ) as resp:
             await self._handle_response(resp)
         logger.info("message_sent", chat_id=chat_id, length=len(content))
 
-    @retry(max_attempts=3, retryable=(aiohttp.ClientError, asyncio.TimeoutError))
+    @retry(max_attempts=3, retryable=(aiohttp.ClientError, asyncio.TimeoutError, Comm100AuthError))
     async def accept_chat(self, chat_id: str) -> None:
         async with self._s.post(
-            f"{self._base_url}/chats/{chat_id}/accept"
+            f"{self._base_url}/chats/{chat_id}/accept",
+            headers=self._headers(),
         ) as resp:
             await self._handle_response(resp)
         logger.info("chat_accepted", chat_id=chat_id)
@@ -128,7 +165,9 @@ class Comm100Client:
     @retry(max_attempts=2, retryable=(aiohttp.ClientError, asyncio.TimeoutError))
     async def test_connection(self) -> bool:
         try:
-            async with self._s.get(f"{self._global_url}/agents") as resp:
+            async with self._s.get(
+                f"{self._global_url}/agents", headers=self._headers()
+            ) as resp:
                 await self._handle_response(resp)
             logger.info("comm100_connection_ok")
             return True

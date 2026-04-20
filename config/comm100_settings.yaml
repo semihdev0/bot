@@ -1,7 +1,6 @@
 # Comm100 Chat Bot Ayarlari
 
 api:
-  region: 1
   timeout_seconds: 30
   max_retries: 3
 

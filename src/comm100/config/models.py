@@ -8,7 +8,6 @@ from pydantic import BaseModel, Field
 
 
 class Comm100ApiConfig(BaseModel):
-    region: int = 1
     timeout_seconds: int = 30
     max_retries: int = 3
 
@@ -39,9 +38,9 @@ class Comm100Settings(BaseModel):
 
 class Comm100Credentials(BaseModel):
     email: str
-    api_key: str
+    password: str
     site_id: str
-    region: int = 1
+    api_base_url: str = "https://api15.lively-chat.com"
 
 
 class AnthropicCredentials(BaseModel):
