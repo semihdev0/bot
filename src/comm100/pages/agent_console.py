@@ -286,65 +286,62 @@ class AgentConsolePage:
         return messages
 
     async def get_all_messages(self) -> list[ChatMessage]:
+        messages: list[ChatMessage] = []
         try:
-            result = await self._page.evaluate("""() => {
-                const messages = [];
-                // Find all elements with Message-module in class
-                const els = document.querySelectorAll('[class*="Message-module"]');
-                for (const el of els) {
-                    const cls = el.className || '';
-                    // Skip system messages
-                    if (cls.includes('SystemMessage')) continue;
+            msg_locator = self._page.locator("[class*='Message-module']")
+            count = await msg_locator.count()
 
-                    const text = (el.innerText || '').trim();
-                    if (!text) continue;
+            if count == 0:
+                return messages
 
-                    // Skip system-like text
-                    const lower = text.toLowerCase();
-                    if (lower.includes('joined') || lower.includes('katıldı') ||
-                        lower.includes('görüşmeye') || lower.includes('please wait') ||
-                        lower.includes('please click') || lower.includes('leave us a message')) {
-                        continue;
-                    }
+            for i in range(count):
+                try:
+                    el = msg_locator.nth(i)
+                    cls = (await el.get_attribute("class")) or ""
 
-                    // Get the last line as message content
-                    const lines = text.split('\\n').filter(l => l.trim());
-                    const content = lines[lines.length - 1].trim();
-                    if (!content || content.length < 1) continue;
+                    if "SystemMessage" in cls:
+                        continue
 
-                    // Determine sender from class or position
-                    let sender = 'visitor';
-                    if (cls.includes('Agent') || cls.includes('agent') ||
-                        cls.includes('Right') || cls.includes('right')) {
-                        sender = 'agent';
-                    }
-                    // Also check child elements for agent indicators
-                    if (el.querySelector('[class*="Agent"]') ||
-                        el.querySelector('[class*="agent"]')) {
-                        sender = 'agent';
-                    }
+                    text = (await el.inner_text(timeout=3000)).strip()
+                    if not text:
+                        continue
 
-                    messages.push({sender: sender, content: content, cls: cls.substring(0, 80)});
-                }
-                return messages;
-            }""")
+                    lower = text.lower()
+                    if any(skip in lower for skip in [
+                        "joined", "katıldı", "görüşmeye",
+                        "please wait", "please click", "leave us a message",
+                    ]):
+                        continue
 
-            messages = []
-            for item in result:
-                messages.append(ChatMessage(
-                    sender=item["sender"],
-                    content=item["content"],
-                ))
+                    lines = [l.strip() for l in text.split("\n") if l.strip()]
+                    content = lines[-1] if lines else ""
+                    if not content:
+                        continue
 
-            if not getattr(self, "_msgs_logged", False) and result:
+                    sender = "visitor"
+                    if "Agent" in cls or "agent" in cls or "Right" in cls or "right" in cls:
+                        sender = "agent"
+                    else:
+                        inner_html = (await el.inner_html(timeout=2000)) or ""
+                        if "Agent" in inner_html or "agent" in inner_html:
+                            sender = "agent"
+
+                    messages.append(ChatMessage(sender=sender, content=content))
+                except Exception:
+                    continue
+
+            if not getattr(self, "_msgs_logged", False) and messages:
                 self._msgs_logged = True
-                logger.info("js_messages_found", raw=result[:5])
-
-            return messages
+                logger.info(
+                    "messages_parsed",
+                    count=len(messages),
+                    sample=[{"s": m.sender, "c": m.content[:40]} for m in messages[:5]],
+                )
 
         except Exception as e:
             logger.error("get_messages_error", error=str(e))
-            return []
+
+        return messages
 
     async def send_reply(self, text: str) -> None:
         # First click the "Reply" tab to make sure we're in reply mode

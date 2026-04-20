@@ -15,6 +15,8 @@ from src.monitoring.health import write_heartbeat
 
 logger = structlog.get_logger()
 
+GREETING = "Ferrari Casino'ya hoşgeldiniz! Size nasıl yardımcı olabilirim?"
+
 
 class ChatProcessor:
     """Orchestrates Comm100 chat processing via browser automation."""
@@ -38,97 +40,89 @@ class ChatProcessor:
             "ai_responses": 0,
             "errors": 0,
         }
-        self._last_seen_count = 0
+        self._greeted_chats: set[str] = set()
+        self._poll_count = 0
 
     async def run_polling_cycle(self) -> None:
         try:
-            self._poll_count = getattr(self, "_poll_count", 0) + 1
-            logger.info("polling", cycle=self._poll_count)
+            self._poll_count += 1
 
+            # Accept any new chat notification
             accepted = await self._console.accept_new_chat()
             if accepted:
                 logger.info("new_chat_accepted_in_cycle")
+                await asyncio.sleep(2)
 
+            # Get visible chat items
             chat_items = await self._console.get_chat_items()
-            logger.info("poll_result", chat_count=len(chat_items))
-
             if not chat_items:
-                if self._poll_count <= 3 or self._poll_count % 12 == 0:
-                    await self._console.take_debug_screenshot()
                 return
 
-            for i, item in enumerate(chat_items[:self._config.polling.max_chats_per_cycle]):
+            # Process each chat one by one
+            for i, item in enumerate(chat_items):
                 try:
-                    await asyncio.wait_for(
-                        item.evaluate("el => el.click()"), timeout=5
-                    )
-                    await asyncio.sleep(1)
-                    await self._process_current_chat()
+                    # Get chat identifier from item text
+                    chat_name = await self._get_item_text(item)
+
+                    # Click this chat to make it active
+                    await item.dispatch_event("click")
+                    await asyncio.sleep(1.5)
+
+                    # Read messages from the now-active chat
+                    messages = await self._console.get_all_messages()
+                    logger.info("chat_check", index=i, name=chat_name, msgs=len(messages))
+
+                    await self._handle_chat(chat_name, messages)
+
                 except asyncio.TimeoutError:
                     logger.warning("chat_click_timeout", index=i)
                 except Exception as e:
                     logger.error("chat_process_error", index=i, error=str(e))
                     self._stats["errors"] += 1
 
-            write_heartbeat(
-                status="healthy",
-                processed=self._stats["processed"],
-            )
+            write_heartbeat(status="healthy", processed=self._stats["processed"])
 
         except Exception as e:
             logger.error("polling_cycle_error", error=str(e), exc_info=True)
             self._stats["errors"] += 1
 
-    async def _process_current_chat(self) -> None:
-        GREETING = "Ferrari Casino'ya hoşgeldiniz! Size nasıl yardımcı olabilirim?"
+    async def _get_item_text(self, item) -> str:
+        try:
+            text = (await item.inner_text()).strip()
+            return text.split("\n")[0][:30]
+        except Exception:
+            return "unknown"
 
-        messages = await self._console.get_all_messages()
-        logger.info("chat_messages", count=len(messages))
+    async def _handle_chat(self, chat_name: str, messages: list[ChatMessage]) -> None:
+        visitor_msgs = [m for m in messages if m.sender == "visitor" and m.content]
+        agent_msgs = [m for m in messages if m.sender == "agent"]
 
-        # No messages at all → send greeting
-        if not messages:
-            logger.info("no_messages_sending_greeting")
+        # No agent message yet → send greeting (once per chat)
+        if not agent_msgs and chat_name not in self._greeted_chats:
+            logger.info("sending_greeting", chat=chat_name)
             sent = await self._console.send_reply(GREETING)
             if sent:
+                self._greeted_chats.add(chat_name)
                 self._stats["processed"] += 1
             return
 
-        visitor_msgs = [m for m in messages if m.sender == "visitor" and m.content]
-        agent_msgs = [m for m in messages if m.sender == "agent"]
-        logger.info(
-            "msg_breakdown",
-            total=len(messages),
-            visitor=len(visitor_msgs),
-            agent=len(agent_msgs),
-            msgs=[(m.sender, m.content[:30]) for m in messages],
-        )
-
-        # Has messages but no visitor messages → send greeting if no agent msg yet
+        # No visitor messages → nothing to respond to
         if not visitor_msgs:
-            if not agent_msgs:
-                greeting_key = f"greeting_{len(messages)}"
-                if not self._state.has_responded(greeting_key):
-                    logger.info("sending_greeting_no_visitor_msgs")
-                    sent = await self._console.send_reply(GREETING)
-                    if sent:
-                        self._state.mark_responded(greeting_key)
-                        self._stats["processed"] += 1
             return
 
-        last_visitor_msg = visitor_msgs[-1]
-        msg_key = f"{hash(last_visitor_msg.content)}_{len(messages)}"
+        last_visitor = visitor_msgs[-1]
+        msg_key = f"{hash(last_visitor.content)}_{len(messages)}"
 
         if self._state.has_responded(msg_key):
-            logger.info("already_responded", key=msg_key[:40])
             return
 
-        last_msg_is_agent = messages[-1].sender == "agent"
-        if last_msg_is_agent:
-            logger.info("last_msg_is_agent_skipping")
+        # Last message is from agent → no new visitor input
+        if messages and messages[-1].sender == "agent":
             return
 
-        logger.info("generating_response", msg=last_visitor_msg.content[:60])
-        response = await self._generate_response(messages, last_visitor_msg)
+        # Generate and send response
+        logger.info("generating_response", chat=chat_name, msg=last_visitor.content[:60])
+        response = await self._generate_response(messages, last_visitor)
         sent = await self._console.send_reply(response)
 
         if sent:
@@ -136,11 +130,12 @@ class ChatProcessor:
             self._stats["processed"] += 1
             logger.info(
                 "message_responded",
-                visitor_msg=last_visitor_msg.content[:80],
+                chat=chat_name,
+                visitor_msg=last_visitor.content[:80],
                 response=response[:80],
             )
         else:
-            logger.error("message_send_failed")
+            logger.error("message_send_failed", chat=chat_name)
 
     async def _generate_response(
         self, all_messages: list[ChatMessage], visitor_message: ChatMessage
@@ -148,11 +143,9 @@ class ChatProcessor:
         template_response = self._templates.match(visitor_message.content)
         if template_response:
             self._stats["template_responses"] += 1
-            logger.debug("using_template")
             return template_response
 
         self._stats["ai_responses"] += 1
-        logger.debug("using_claude")
 
         from src.comm100.api.models import Comm100Message
         from datetime import datetime, timezone
