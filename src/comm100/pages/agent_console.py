@@ -142,30 +142,56 @@ class AgentConsolePage:
         logger.info("navigate_to_chats", current_url=self._page.url)
         await self._page.screenshot(path="/tmp/comm100_05_before_nav.png")
 
-        nav_selectors = [
-            "[class*='Chat'] svg",
-            "[class*='chat'] svg",
-            "nav a[href*='chat']",
-            "[class*='chat-nav']",
-            "[class*='nav'] [class*='chat']",
-            "[class*='LiveChat']",
-            "[class*='liveChat']",
-        ]
-        for selector in nav_selectors:
-            try:
-                el = self._page.locator(selector).first
-                if await el.is_visible(timeout=2000):
-                    await el.click(force=True)
-                    logger.info("nav_clicked", selector=selector)
-                    await asyncio.sleep(2)
-                    await self._page.screenshot(
-                        path="/tmp/comm100_06_after_nav.png"
-                    )
-                    return
-            except Exception:
-                continue
+        # The sidebar has icons: [0]=Visitors(globe), [1]=Chats(bubble), ...
+        # Click the 2nd sidebar icon (chat bubble) to go to Chats section
+        sidebar_icons = self._page.locator(
+            "[class*='sidebar'] svg, "
+            "[class*='Sidebar'] svg, "
+            "[class*='navigation'] svg, "
+            "[class*='Navigation'] svg, "
+            "[class*='nav-'] svg, "
+            "[class*='Nav-'] svg"
+        )
+        count = await sidebar_icons.count()
+        logger.info("sidebar_icons_found", count=count)
 
-        logger.info("nav_no_chat_icon_found_staying_on_current_page")
+        if count >= 2:
+            await sidebar_icons.nth(1).click(force=True)
+            logger.info("sidebar_chat_icon_clicked", index=1)
+            await asyncio.sleep(3)
+            await self._page.screenshot(path="/tmp/comm100_06_after_nav.png")
+            return
+
+        # Fallback: try clicking "My Chats" tab
+        my_chats = self._page.locator(
+            "button:has-text('My Chats'), "
+            "[class*='tab']:has-text('My Chats'), "
+            "a:has-text('My Chats')"
+        ).first
+        try:
+            if await my_chats.is_visible(timeout=3000):
+                await my_chats.click(force=True)
+                logger.info("my_chats_tab_clicked")
+                await asyncio.sleep(2)
+                await self._page.screenshot(path="/tmp/comm100_06_after_nav.png")
+                return
+        except Exception:
+            pass
+
+        # Last resort: find any element that looks like a chat nav
+        # Try clicking all sidebar-like items
+        all_sidebar = self._page.locator(
+            "[class*='sidebar'] > *, [class*='Sidebar'] > *"
+        )
+        count = await all_sidebar.count()
+        if count >= 2:
+            await all_sidebar.nth(1).click(force=True)
+            logger.info("sidebar_fallback_clicked", index=1)
+            await asyncio.sleep(3)
+            await self._page.screenshot(path="/tmp/comm100_06_after_nav.png")
+            return
+
+        logger.warning("nav_no_chat_icon_found")
 
     async def get_ongoing_chat_count(self) -> int:
         try:
@@ -249,56 +275,142 @@ class AgentConsolePage:
     async def get_all_messages(self) -> list[ChatMessage]:
         messages = []
 
-        chat_area = self._page.locator(
-            "[class*='chat-area'], [class*='chatArea'], "
-            "[class*='message-list'], [class*='messageList'], "
-            "[class*='conversation']"
-        )
+        # Try multiple strategies to find messages
+        strategies = [
+            "[class*='Message-module']",
+            "[class*='message-module']",
+            "[class*='ChatMessage']",
+            "[class*='chatMessage']",
+            "[class*='messageWrap']",
+            "[class*='message-wrap']",
+            "[class*='msg-item']",
+            "[class*='msgItem']",
+        ]
 
-        msg_wrappers = chat_area.locator(
-            "[class*='message-wrap'], [class*='messageWrap'], "
-            "[class*='msg-wrap'], > div"
-        )
-        count = await msg_wrappers.count()
+        msg_elements = None
+        count = 0
+        for selector in strategies:
+            loc = self._page.locator(selector)
+            c = await loc.count()
+            if c > 0:
+                msg_elements = loc
+                count = c
+                logger.info("messages_selector_hit", selector=selector, count=c)
+                break
 
-        for i in range(count):
-            wrapper = msg_wrappers.nth(i)
-            text = (await wrapper.inner_text()).strip()
-            classes = (await wrapper.get_attribute("class") or "").lower()
+        if count > 0:
+            for i in range(count):
+                el = msg_elements.nth(i)
+                text = (await el.inner_text()).strip()
+                classes = (await el.get_attribute("class") or "").lower()
 
-            if not text or "joined" in text or "wait for" in text:
-                continue
+                if not text or "joined" in text or "wait for" in text:
+                    continue
 
-            lines = text.split("\n")
-            content = lines[-1].strip() if lines else text
+                lines = text.split("\n")
+                content = lines[-1].strip() if lines else text
 
-            if "visitor" in classes or "visitor" in text.lower().split("\n")[0]:
-                messages.append(ChatMessage(sender="visitor", content=content))
-            elif "agent" in classes:
-                messages.append(ChatMessage(sender="agent", content=content))
+                if "visitor" in classes or "visitor" in text.lower().split("\n")[0]:
+                    messages.append(ChatMessage(sender="visitor", content=content))
+                elif "agent" in classes:
+                    messages.append(ChatMessage(sender="agent", content=content))
+
+        if not messages:
+            await self._dump_page_structure()
 
         return messages
 
-    async def send_reply(self, text: str) -> None:
-        reply_area = self._page.locator(
-            "[class*='reply'] textarea, "
-            "[class*='reply'] [contenteditable='true'], "
-            "[class*='input-area'] textarea, "
-            "textarea[class*='reply'], "
-            ".reply-area textarea"
-        ).first
+    async def _dump_page_structure(self) -> None:
+        if getattr(self, "_dumped", False):
+            return
+        self._dumped = True
+
+        await self._page.screenshot(path="/tmp/comm100_chat_area.png")
 
         try:
-            await reply_area.wait_for(state="visible", timeout=5000)
-            await reply_area.click()
-            await reply_area.fill(text)
-        except Exception:
-            textarea = self._page.locator("textarea").first
-            await textarea.click()
-            await textarea.fill(text)
+            result = await self._page.evaluate("""() => {
+                const els = document.querySelectorAll('div[class]');
+                const msgClasses = [];
+                const allClasses = [];
+                for (const el of els) {
+                    const cls = el.className;
+                    if (typeof cls !== 'string') continue;
+                    const first = cls.split(' ')[0];
+                    if (first.length > 100) continue;
+                    allClasses.push(first);
+                    const low = cls.toLowerCase();
+                    if (low.includes('message') || low.includes('msg') ||
+                        low.includes('chat') || low.includes('reply') ||
+                        low.includes('visitor') || low.includes('agent') ||
+                        low.includes('content') || low.includes('bubble')) {
+                        const text = el.innerText?.substring(0, 80) || '';
+                        msgClasses.push({cls: first, text: text, tag: el.tagName});
+                    }
+                }
+                const unique = [...new Set(allClasses)].sort();
+                return {
+                    msg_related: msgClasses.slice(0, 50),
+                    all_classes: unique.slice(0, 120)
+                };
+            }""")
+            logger.info("dom_msg_classes", items=result.get("msg_related", []))
+            logger.info("dom_all_classes", classes=result.get("all_classes", []))
+        except Exception as e:
+            logger.error("dump_error", error=str(e))
 
+    async def send_reply(self, text: str) -> None:
+        # Find the Reply textarea
+        textarea = None
+        textarea_selectors = [
+            "[class*='reply'] textarea",
+            "[class*='Reply'] textarea",
+            "[class*='reply'] [contenteditable='true']",
+            "[class*='Reply'] [contenteditable='true']",
+            "[class*='input-area'] textarea",
+            "textarea",
+        ]
+        for selector in textarea_selectors:
+            loc = self._page.locator(selector).first
+            try:
+                if await loc.is_visible(timeout=2000):
+                    textarea = loc
+                    break
+            except Exception:
+                continue
+
+        if not textarea:
+            logger.error("reply_textarea_not_found")
+            return
+
+        await textarea.click()
+        await textarea.fill(text)
         await asyncio.sleep(0.5)
-        await self._page.keyboard.press("Enter")
+
+        # Try clicking send button first, fallback to Enter
+        send_clicked = False
+        send_selectors = [
+            "[class*='send'] svg",
+            "[class*='Send'] svg",
+            "button[class*='send']",
+            "button[class*='Send']",
+            "[class*='send-btn']",
+            "[title*='Send']",
+            "[aria-label*='Send']",
+        ]
+        for selector in send_selectors:
+            try:
+                btn = self._page.locator(selector).first
+                if await btn.is_visible(timeout=1000):
+                    await btn.click(force=True)
+                    send_clicked = True
+                    logger.info("reply_send_button_clicked", selector=selector)
+                    break
+            except Exception:
+                continue
+
+        if not send_clicked:
+            await self._page.keyboard.press("Enter")
+
         logger.info("reply_sent", length=len(text))
         await asyncio.sleep(1)
 
