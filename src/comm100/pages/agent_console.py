@@ -181,7 +181,7 @@ class AgentConsolePage:
     async def click_chat(self, index: int = 0) -> None:
         items = await self.get_chat_items()
         if index < len(items):
-            await items[index].click()
+            await items[index].click(force=True)
             await asyncio.sleep(1)
 
     async def get_visitor_messages(self) -> list[ChatMessage]:
@@ -273,17 +273,22 @@ class AgentConsolePage:
         await asyncio.sleep(1)
 
     async def accept_new_chat(self) -> bool:
-        try:
-            accept_btn = self._page.locator(
-                "text='Accept', text='Go to Chat'"
-            ).first
-            if await accept_btn.is_visible(timeout=2000):
-                await accept_btn.click()
-                await asyncio.sleep(2)
-                logger.info("new_chat_accepted")
-                return True
-        except Exception:
-            pass
+        accept_selectors = [
+            "button:has-text('Accept')",
+            "button:has-text('Go to Chat')",
+            ".MuiButton-containedPrimary:has-text('Accept')",
+            ".MuiButton-containedPrimary:has-text('Go to Chat')",
+        ]
+        for selector in accept_selectors:
+            try:
+                btn = self._page.locator(selector).first
+                if await btn.is_visible(timeout=1000):
+                    await btn.click(force=True)
+                    await asyncio.sleep(2)
+                    logger.info("new_chat_accepted", selector=selector)
+                    return True
+            except Exception:
+                continue
         return False
 
     async def has_unread_indicator(self) -> bool:
