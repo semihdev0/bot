@@ -195,7 +195,7 @@ class AgentConsolePage:
             items = self._page.locator(selector)
             count = await items.count()
             if count > 0:
-                logger.debug(
+                logger.info(
                     "chat_items_found", selector=selector, count=count
                 )
                 return [items.nth(i) for i in range(count)]
