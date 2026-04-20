@@ -80,30 +80,43 @@ class ChatProcessor:
             self._stats["errors"] += 1
 
     async def _process_current_chat(self) -> None:
+        GREETING = "Ferrari Casino'ya hoşgeldiniz! Size nasıl yardımcı olabilirim?"
+
         messages = await self._console.get_all_messages()
         logger.info("chat_messages", count=len(messages))
+
+        # No messages at all → send greeting
         if not messages:
+            greeting_key = f"greeting_{id(self._console)}"
+            if not self._state.has_responded(greeting_key):
+                logger.info("sending_greeting")
+                await self._console.send_reply(GREETING)
+                self._state.mark_responded(greeting_key)
+                self._stats["processed"] += 1
             return
 
         visitor_msgs = [m for m in messages if m.sender == "visitor" and m.content]
-        logger.info(
-            "visitor_messages",
-            count=len(visitor_msgs),
-            last=visitor_msgs[-1].content[:60] if visitor_msgs else "none",
-        )
+        agent_msgs = [m for m in messages if m.sender == "agent"]
+
+        # Has messages but no visitor messages → send greeting if no agent msg yet
         if not visitor_msgs:
+            if not agent_msgs:
+                greeting_key = f"greeting_{len(messages)}"
+                if not self._state.has_responded(greeting_key):
+                    logger.info("sending_greeting_no_visitor_msgs")
+                    await self._console.send_reply(GREETING)
+                    self._state.mark_responded(greeting_key)
+                    self._stats["processed"] += 1
             return
 
         last_visitor_msg = visitor_msgs[-1]
         msg_key = f"{hash(last_visitor_msg.content)}_{len(messages)}"
 
         if self._state.has_responded(msg_key):
-            logger.info("already_responded", key=msg_key)
             return
 
         last_msg_is_agent = messages[-1].sender == "agent"
         if last_msg_is_agent:
-            logger.info("last_msg_is_agent_skipping")
             return
 
         logger.info("generating_response", msg=last_visitor_msg.content[:60])

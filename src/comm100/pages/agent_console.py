@@ -221,10 +221,23 @@ class AgentConsolePage:
             items = self._page.locator(selector)
             count = await items.count()
             if count > 0:
-                logger.info(
-                    "chat_items_found", selector=selector, count=count
-                )
-                return [items.nth(i) for i in range(count)]
+                # Only return visible items
+                visible = []
+                for i in range(min(count, 10)):
+                    item = items.nth(i)
+                    try:
+                        if await item.is_visible(timeout=1000):
+                            visible.append(item)
+                    except Exception:
+                        continue
+                if visible:
+                    logger.info(
+                        "chat_items_found",
+                        selector=selector,
+                        total=count,
+                        visible=len(visible),
+                    )
+                    return visible
         return []
 
     async def take_debug_screenshot(self) -> None:
@@ -275,48 +288,62 @@ class AgentConsolePage:
     async def get_all_messages(self) -> list[ChatMessage]:
         messages = []
 
-        # Try multiple strategies to find messages
-        strategies = [
-            "[class*='Message-module']",
-            "[class*='message-module']",
-            "[class*='ChatMessage']",
-            "[class*='chatMessage']",
-            "[class*='messageWrap']",
-            "[class*='message-wrap']",
-            "[class*='msg-item']",
-            "[class*='msgItem']",
-        ]
+        msg_elements = self._page.locator("[class*='Message-module']")
+        count = await msg_elements.count()
 
-        msg_elements = None
-        count = 0
-        for selector in strategies:
-            loc = self._page.locator(selector)
-            c = await loc.count()
-            if c > 0:
-                msg_elements = loc
-                count = c
-                logger.info("messages_selector_hit", selector=selector, count=c)
-                break
+        if count == 0:
+            return messages
 
-        if count > 0:
-            for i in range(count):
-                el = msg_elements.nth(i)
-                text = (await el.inner_text()).strip()
-                classes = (await el.get_attribute("class") or "").lower()
+        for i in range(count):
+            el = msg_elements.nth(i)
+            text = (await el.inner_text()).strip()
+            classes = await el.get_attribute("class") or ""
 
-                if not text or "joined" in text or "wait for" in text:
-                    continue
+            if not text:
+                continue
 
-                lines = text.split("\n")
-                content = lines[-1].strip() if lines else text
+            # Log first few for debugging
+            if i < 5 and not getattr(self, "_msgs_logged", False):
+                logger.info("msg_element", index=i, classes=classes, text=text[:100])
 
-                if "visitor" in classes or "visitor" in text.lower().split("\n")[0]:
+            # Skip system messages
+            if "katıldı" in text or "joined" in text or "görüşmeye" in text:
+                continue
+
+            lines = text.strip().split("\n")
+            content = lines[-1].strip() if lines else text
+
+            # Skip empty or time-only content
+            if not content or len(content) < 2:
+                continue
+
+            # Determine sender from CSS class
+            cls_lower = classes.lower()
+            if "visitor" in cls_lower or "left" in cls_lower:
+                messages.append(ChatMessage(sender="visitor", content=content))
+            elif "agent" in cls_lower or "right" in cls_lower:
+                messages.append(ChatMessage(sender="agent", content=content))
+            else:
+                # Can't determine from class - use JS to check alignment
+                try:
+                    is_right = await el.evaluate(
+                        "el => getComputedStyle(el).textAlign === 'right' || "
+                        "el.querySelector('[class*=\"right\"]') !== null || "
+                        "el.querySelector('[class*=\"Right\"]') !== null || "
+                        "el.querySelector('[class*=\"agent\"]') !== null || "
+                        "el.querySelector('[class*=\"Agent\"]') !== null"
+                    )
+                    if is_right:
+                        messages.append(ChatMessage(sender="agent", content=content))
+                    else:
+                        messages.append(ChatMessage(sender="visitor", content=content))
+                except Exception:
                     messages.append(ChatMessage(sender="visitor", content=content))
-                elif "agent" in classes:
-                    messages.append(ChatMessage(sender="agent", content=content))
 
-        if not messages:
-            await self._dump_page_structure()
+        if not getattr(self, "_msgs_logged", False):
+            self._msgs_logged = True
+            logger.info("parsed_messages", count=len(messages),
+                       msgs=[(m.sender, m.content[:40]) for m in messages])
 
         return messages
 
