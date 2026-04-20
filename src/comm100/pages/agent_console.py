@@ -432,7 +432,7 @@ class AgentConsolePage:
         if not textarea:
             logger.error("reply_textarea_not_found")
             await self._page.screenshot(path="/tmp/comm100_reply_error.png")
-            return
+            return False
 
         await textarea.click()
         await asyncio.sleep(0.3)
@@ -476,6 +476,7 @@ class AgentConsolePage:
 
         logger.info("reply_sent", length=len(text))
         await asyncio.sleep(1)
+        return True
 
     async def accept_new_chat(self) -> bool:
         accept_selectors = [
