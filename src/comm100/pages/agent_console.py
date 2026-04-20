@@ -11,8 +11,8 @@ from playwright.async_api import Page, Locator
 logger = structlog.get_logger()
 
 AGENT_CONSOLE_URL = (
-    "https://dash15.lively-chat.com/agentconsole/agentconsole.html"
-    "?partnerId=100001&siteId={site_id}"
+    "https://dash15.lively-chat.com/agentconsole/auth.html"
+    "?siteId={site_id}"
 )
 LOGIN_URL = "https://secure.comm100.io/signin"
 
@@ -31,80 +31,107 @@ class AgentConsolePage:
         self._site_id = site_id
 
     async def login(self, email: str, password: str) -> None:
-        url = AGENT_CONSOLE_URL.format(site_id=self._site_id)
-        await self._page.goto(url, wait_until="networkidle", timeout=60000)
-        await asyncio.sleep(5)
+        # Step 1: Go to Comm100 login page
+        logger.info("navigating_to_login", url=LOGIN_URL)
+        await self._page.goto(LOGIN_URL, wait_until="networkidle", timeout=60000)
+        await asyncio.sleep(3)
+        await self._page.screenshot(path="/tmp/comm100_01_login_page.png")
 
-        current = self._page.url
-        if "signin" in current or "login" in current:
-            logger.info("login_required", url=current)
+        # Step 2: Fill email
+        email_input = self._page.locator(
+            "input[type='email'], input[name='email'], "
+            "input[id*='email'], input[id*='Email'], "
+            "input[placeholder*='mail'], input[placeholder*='Mail']"
+        ).first
+        await email_input.wait_for(state="visible", timeout=15000)
+        await email_input.fill(email)
+        logger.info("login_email_filled")
 
-            await self._page.screenshot(path="/tmp/comm100_login_page.png")
+        # Step 3: Fill password
+        password_input = self._page.locator(
+            "input[type='password'], input[name='password'], "
+            "input[id*='password'], input[id*='Password']"
+        ).first
+        await password_input.wait_for(state="visible", timeout=10000)
+        await password_input.fill(password)
+        logger.info("login_password_filled")
 
-            email_input = self._page.locator(
-                "input[type='email'], input[name='email'], "
-                "input[id*='email'], input[id*='Email'], "
-                "input[placeholder*='mail'], input[placeholder*='Mail']"
-            ).first
-            await email_input.wait_for(state="visible", timeout=15000)
-            await email_input.fill(email)
-            logger.info("login_email_filled")
-
-            password_input = self._page.locator(
-                "input[type='password'], input[name='password'], "
-                "input[id*='password'], input[id*='Password']"
-            ).first
-            await password_input.wait_for(state="visible", timeout=10000)
-            await password_input.fill(password)
-            logger.info("login_password_filled")
-
-            submitted = False
-            submit_selectors = [
-                "button[type='submit']",
-                "input[type='submit']",
-                "button:has-text('Sign')",
-                "button:has-text('Log')",
-                "button:has-text('Giriş')",
-                "button:has-text('Submit')",
-                "a:has-text('Sign')",
-                "a:has-text('Log')",
-                "#btnLogin",
-                ".btn-login",
-                "[class*='login'] button",
-                "[class*='sign'] button",
-                "form button",
-            ]
-            for selector in submit_selectors:
-                try:
-                    btn = self._page.locator(selector).first
-                    if await btn.is_visible(timeout=2000):
-                        await btn.click()
-                        submitted = True
-                        logger.info("login_submit_clicked", selector=selector)
-                        break
-                except Exception:
-                    continue
-
-            if not submitted:
-                logger.info("login_submit_fallback_enter")
-                await password_input.press("Enter")
-
+        # Step 4: Click submit button
+        submitted = False
+        submit_selectors = [
+            "button[type='submit']",
+            "input[type='submit']",
+            "button:has-text('Sign')",
+            "button:has-text('Log')",
+            "button:has-text('Giriş')",
+            "button:has-text('Submit')",
+            "#btnLogin",
+            "form button",
+        ]
+        for selector in submit_selectors:
             try:
-                await self._page.wait_for_url(
-                    "**/agentconsole/**", timeout=30000
-                )
-                logger.info("login_success")
+                btn = self._page.locator(selector).first
+                if await btn.is_visible(timeout=2000):
+                    await btn.click()
+                    submitted = True
+                    logger.info("login_submit_clicked", selector=selector)
+                    break
             except Exception:
-                await self._page.screenshot(path="/tmp/comm100_login_after.png")
-                logger.error(
-                    "login_redirect_timeout",
-                    current_url=self._page.url,
-                )
-                raise
-        else:
-            logger.info("already_logged_in")
+                continue
+
+        if not submitted:
+            logger.info("login_submit_fallback_enter")
+            await password_input.press("Enter")
+
+        await asyncio.sleep(5)
+        await self._page.screenshot(path="/tmp/comm100_02_after_login.png")
+        logger.info("login_form_submitted", current_url=self._page.url)
+
+        # Step 5: Navigate to Agent Console
+        console_url = AGENT_CONSOLE_URL.format(site_id=self._site_id)
+        logger.info("navigating_to_console", url=console_url)
+        await self._page.goto(console_url, wait_until="networkidle", timeout=60000)
+        await asyncio.sleep(5)
+        await self._page.screenshot(path="/tmp/comm100_03_console.png")
+        logger.info("console_loaded", current_url=self._page.url)
+
+        # Step 6: Handle "forced login" if another session is active
+        await self._handle_forced_login()
 
         await asyncio.sleep(3)
+
+    async def _handle_forced_login(self) -> None:
+        force_selectors = [
+            "button:has-text('Force')",
+            "button:has-text('force')",
+            "button:has-text('Continue')",
+            "button:has-text('continue')",
+            "button:has-text('Log In')",
+            "button:has-text('Login')",
+            "button:has-text('Yes')",
+            "button:has-text('OK')",
+            "button:has-text('Confirm')",
+            ":has-text('Force') >> button",
+            "[class*='force'] button",
+            "[class*='modal'] button:has-text('Log')",
+            "[class*='modal'] button:has-text('Yes')",
+            "[class*='dialog'] button:has-text('Log')",
+            "[class*='dialog'] button:has-text('Yes')",
+        ]
+        for selector in force_selectors:
+            try:
+                btn = self._page.locator(selector).first
+                if await btn.is_visible(timeout=2000):
+                    await btn.click()
+                    logger.info("forced_login_clicked", selector=selector)
+                    await asyncio.sleep(3)
+                    await self._page.screenshot(
+                        path="/tmp/comm100_04_after_force.png"
+                    )
+                    return
+            except Exception:
+                continue
+        logger.info("no_forced_login_prompt")
 
     async def navigate_to_chats(self) -> None:
         chat_icon = self._page.locator(
