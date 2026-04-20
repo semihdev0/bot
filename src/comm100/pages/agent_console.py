@@ -288,64 +288,66 @@ class AgentConsolePage:
     async def get_all_messages(self) -> list[ChatMessage]:
         messages = []
 
-        msg_elements = self._page.locator("[class*='Message-module']")
-        count = await msg_elements.count()
+        # Use specific CSS module class patterns
+        visitor_els = self._page.locator("[class*='ChatVisitorMessage-module']")
+        agent_els = self._page.locator("[class*='ChatAgentMessage-module']")
 
-        if count == 0:
-            return messages
+        v_count = await visitor_els.count()
+        a_count = await agent_els.count()
+        logger.info("message_elements", visitor=v_count, agent=a_count)
 
-        for i in range(count):
-            el = msg_elements.nth(i)
+        for i in range(v_count):
+            el = visitor_els.nth(i)
             text = (await el.inner_text()).strip()
-            classes = await el.get_attribute("class") or ""
-
             if not text:
                 continue
-
-            # Log first few for debugging
-            if i < 5 and not getattr(self, "_msgs_logged", False):
-                logger.info("msg_element", index=i, classes=classes, text=text[:100])
-
-            # Skip system messages
-            if "katıldı" in text or "joined" in text or "görüşmeye" in text:
-                continue
-
             lines = text.strip().split("\n")
             content = lines[-1].strip() if lines else text
-
-            # Skip empty or time-only content
-            if not content or len(content) < 2:
+            if self._is_system_text(content):
                 continue
+            messages.append(ChatMessage(sender="visitor", content=content))
 
-            # Determine sender from CSS class
-            cls_lower = classes.lower()
-            if "visitor" in cls_lower or "left" in cls_lower:
-                messages.append(ChatMessage(sender="visitor", content=content))
-            elif "agent" in cls_lower or "right" in cls_lower:
-                messages.append(ChatMessage(sender="agent", content=content))
-            else:
-                # Can't determine from class - use JS to check alignment
-                try:
-                    is_right = await el.evaluate(
-                        "el => getComputedStyle(el).textAlign === 'right' || "
-                        "el.querySelector('[class*=\"right\"]') !== null || "
-                        "el.querySelector('[class*=\"Right\"]') !== null || "
-                        "el.querySelector('[class*=\"agent\"]') !== null || "
-                        "el.querySelector('[class*=\"Agent\"]') !== null"
-                    )
-                    if is_right:
-                        messages.append(ChatMessage(sender="agent", content=content))
-                    else:
-                        messages.append(ChatMessage(sender="visitor", content=content))
-                except Exception:
+        for i in range(a_count):
+            el = agent_els.nth(i)
+            text = (await el.inner_text()).strip()
+            if not text:
+                continue
+            lines = text.strip().split("\n")
+            content = lines[-1].strip() if lines else text
+            if self._is_system_text(content):
+                continue
+            messages.append(ChatMessage(sender="agent", content=content))
+
+        # If specific selectors don't work, try generic
+        if not messages and v_count == 0 and a_count == 0:
+            generic = self._page.locator("[class*='Message-module']")
+            g_count = await generic.count()
+            for i in range(g_count):
+                el = generic.nth(i)
+                classes = await el.get_attribute("class") or ""
+                if "SystemMessage" in classes:
+                    continue
+                text = (await el.inner_text()).strip()
+                if not text or self._is_system_text(text):
+                    continue
+                lines = text.strip().split("\n")
+                content = lines[-1].strip()
+                if "Visitor" in classes or "visitor" in classes:
                     messages.append(ChatMessage(sender="visitor", content=content))
-
-        if not getattr(self, "_msgs_logged", False):
-            self._msgs_logged = True
-            logger.info("parsed_messages", count=len(messages),
-                       msgs=[(m.sender, m.content[:40]) for m in messages])
+                elif "Agent" in classes or "agent" in classes:
+                    messages.append(ChatMessage(sender="agent", content=content))
 
         return messages
+
+    @staticmethod
+    def _is_system_text(text: str) -> bool:
+        skip = [
+            "joined", "katıldı", "görüşmeye",
+            "Please wait", "please click",
+            "leave us a message", "waiting for",
+        ]
+        lower = text.lower()
+        return any(s.lower() in lower for s in skip)
 
     async def _dump_page_structure(self) -> None:
         if getattr(self, "_dumped", False):
@@ -386,57 +388,91 @@ class AgentConsolePage:
             logger.error("dump_error", error=str(e))
 
     async def send_reply(self, text: str) -> None:
-        # Find the Reply textarea
+        # First click the "Reply" tab to make sure we're in reply mode
+        try:
+            reply_tab = self._page.locator(
+                "[class*='tab']:has-text('Reply'), "
+                "button:has-text('Reply'), "
+                "[role='tab']:has-text('Reply')"
+            ).first
+            if await reply_tab.is_visible(timeout=2000):
+                await reply_tab.click(force=True)
+                await asyncio.sleep(0.5)
+        except Exception:
+            pass
+
+        # Find the reply input area
         textarea = None
         textarea_selectors = [
+            "[class*='Reply-module'] textarea",
+            "[class*='reply-module'] textarea",
+            "[class*='Reply-module'] [contenteditable='true']",
+            "[class*='reply-module'] [contenteditable='true']",
+            "[class*='chatInput'] textarea",
+            "[class*='ChatInput'] textarea",
+            "[class*='chatInput'] [contenteditable='true']",
+            "[class*='ChatInput'] [contenteditable='true']",
             "[class*='reply'] textarea",
             "[class*='Reply'] textarea",
             "[class*='reply'] [contenteditable='true']",
             "[class*='Reply'] [contenteditable='true']",
-            "[class*='input-area'] textarea",
+            "[contenteditable='true']",
             "textarea",
         ]
         for selector in textarea_selectors:
-            loc = self._page.locator(selector).first
             try:
-                if await loc.is_visible(timeout=2000):
+                loc = self._page.locator(selector).first
+                if await loc.is_visible(timeout=1000):
                     textarea = loc
+                    logger.info("reply_input_found", selector=selector)
                     break
             except Exception:
                 continue
 
         if not textarea:
             logger.error("reply_textarea_not_found")
+            await self._page.screenshot(path="/tmp/comm100_reply_error.png")
             return
 
         await textarea.click()
-        await textarea.fill(text)
+        await asyncio.sleep(0.3)
+
+        # Type the text
+        try:
+            await textarea.fill(text)
+        except Exception:
+            await textarea.type(text, delay=10)
+
         await asyncio.sleep(0.5)
 
-        # Try clicking send button first, fallback to Enter
-        send_clicked = False
+        # Try send button (blue icon at bottom right), fallback to Enter
         send_selectors = [
-            "[class*='send'] svg",
-            "[class*='Send'] svg",
+            "[class*='Send-module'] svg",
+            "[class*='send-module'] svg",
+            "[class*='sendBtn'] svg",
+            "[class*='SendBtn'] svg",
             "button[class*='send']",
             "button[class*='Send']",
-            "[class*='send-btn']",
             "[title*='Send']",
             "[aria-label*='Send']",
+            "[class*='send'] svg",
+            "[class*='Send'] svg",
         ]
+        send_clicked = False
         for selector in send_selectors:
             try:
                 btn = self._page.locator(selector).first
                 if await btn.is_visible(timeout=1000):
                     await btn.click(force=True)
                     send_clicked = True
-                    logger.info("reply_send_button_clicked", selector=selector)
+                    logger.info("send_button_clicked", selector=selector)
                     break
             except Exception:
                 continue
 
         if not send_clicked:
             await self._page.keyboard.press("Enter")
+            logger.info("send_via_enter")
 
         logger.info("reply_sent", length=len(text))
         await asyncio.sleep(1)
