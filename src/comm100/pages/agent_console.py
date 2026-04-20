@@ -286,106 +286,65 @@ class AgentConsolePage:
         return messages
 
     async def get_all_messages(self) -> list[ChatMessage]:
-        messages = []
-
-        # Use specific CSS module class patterns
-        visitor_els = self._page.locator("[class*='ChatVisitorMessage-module']")
-        agent_els = self._page.locator("[class*='ChatAgentMessage-module']")
-
-        v_count = await visitor_els.count()
-        a_count = await agent_els.count()
-        logger.info("message_elements", visitor=v_count, agent=a_count)
-
-        for i in range(v_count):
-            el = visitor_els.nth(i)
-            text = (await el.inner_text()).strip()
-            if not text:
-                continue
-            lines = text.strip().split("\n")
-            content = lines[-1].strip() if lines else text
-            if self._is_system_text(content):
-                continue
-            messages.append(ChatMessage(sender="visitor", content=content))
-
-        for i in range(a_count):
-            el = agent_els.nth(i)
-            text = (await el.inner_text()).strip()
-            if not text:
-                continue
-            lines = text.strip().split("\n")
-            content = lines[-1].strip() if lines else text
-            if self._is_system_text(content):
-                continue
-            messages.append(ChatMessage(sender="agent", content=content))
-
-        # If specific selectors don't work, try generic
-        if not messages and v_count == 0 and a_count == 0:
-            generic = self._page.locator("[class*='Message-module']")
-            g_count = await generic.count()
-            for i in range(g_count):
-                el = generic.nth(i)
-                classes = await el.get_attribute("class") or ""
-                if "SystemMessage" in classes:
-                    continue
-                text = (await el.inner_text()).strip()
-                if not text or self._is_system_text(text):
-                    continue
-                lines = text.strip().split("\n")
-                content = lines[-1].strip()
-                if "Visitor" in classes or "visitor" in classes:
-                    messages.append(ChatMessage(sender="visitor", content=content))
-                elif "Agent" in classes or "agent" in classes:
-                    messages.append(ChatMessage(sender="agent", content=content))
-
-        return messages
-
-    @staticmethod
-    def _is_system_text(text: str) -> bool:
-        skip = [
-            "joined", "katıldı", "görüşmeye",
-            "Please wait", "please click",
-            "leave us a message", "waiting for",
-        ]
-        lower = text.lower()
-        return any(s.lower() in lower for s in skip)
-
-    async def _dump_page_structure(self) -> None:
-        if getattr(self, "_dumped", False):
-            return
-        self._dumped = True
-
-        await self._page.screenshot(path="/tmp/comm100_chat_area.png")
-
         try:
             result = await self._page.evaluate("""() => {
-                const els = document.querySelectorAll('div[class]');
-                const msgClasses = [];
-                const allClasses = [];
+                const messages = [];
+                // Find all elements with Message-module in class
+                const els = document.querySelectorAll('[class*="Message-module"]');
                 for (const el of els) {
-                    const cls = el.className;
-                    if (typeof cls !== 'string') continue;
-                    const first = cls.split(' ')[0];
-                    if (first.length > 100) continue;
-                    allClasses.push(first);
-                    const low = cls.toLowerCase();
-                    if (low.includes('message') || low.includes('msg') ||
-                        low.includes('chat') || low.includes('reply') ||
-                        low.includes('visitor') || low.includes('agent') ||
-                        low.includes('content') || low.includes('bubble')) {
-                        const text = el.innerText?.substring(0, 80) || '';
-                        msgClasses.push({cls: first, text: text, tag: el.tagName});
+                    const cls = el.className || '';
+                    // Skip system messages
+                    if (cls.includes('SystemMessage')) continue;
+
+                    const text = (el.innerText || '').trim();
+                    if (!text) continue;
+
+                    // Skip system-like text
+                    const lower = text.toLowerCase();
+                    if (lower.includes('joined') || lower.includes('katıldı') ||
+                        lower.includes('görüşmeye') || lower.includes('please wait') ||
+                        lower.includes('please click') || lower.includes('leave us a message')) {
+                        continue;
                     }
+
+                    // Get the last line as message content
+                    const lines = text.split('\\n').filter(l => l.trim());
+                    const content = lines[lines.length - 1].trim();
+                    if (!content || content.length < 1) continue;
+
+                    // Determine sender from class or position
+                    let sender = 'visitor';
+                    if (cls.includes('Agent') || cls.includes('agent') ||
+                        cls.includes('Right') || cls.includes('right')) {
+                        sender = 'agent';
+                    }
+                    // Also check child elements for agent indicators
+                    if (el.querySelector('[class*="Agent"]') ||
+                        el.querySelector('[class*="agent"]')) {
+                        sender = 'agent';
+                    }
+
+                    messages.push({sender: sender, content: content, cls: cls.substring(0, 80)});
                 }
-                const unique = [...new Set(allClasses)].sort();
-                return {
-                    msg_related: msgClasses.slice(0, 50),
-                    all_classes: unique.slice(0, 120)
-                };
+                return messages;
             }""")
-            logger.info("dom_msg_classes", items=result.get("msg_related", []))
-            logger.info("dom_all_classes", classes=result.get("all_classes", []))
+
+            messages = []
+            for item in result:
+                messages.append(ChatMessage(
+                    sender=item["sender"],
+                    content=item["content"],
+                ))
+
+            if not getattr(self, "_msgs_logged", False) and result:
+                self._msgs_logged = True
+                logger.info("js_messages_found", raw=result[:5])
+
+            return messages
+
         except Exception as e:
-            logger.error("dump_error", error=str(e))
+            logger.error("get_messages_error", error=str(e))
+            return []
 
     async def send_reply(self, text: str) -> None:
         # First click the "Reply" tab to make sure we're in reply mode
