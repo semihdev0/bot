@@ -139,18 +139,33 @@ class AgentConsolePage:
         logger.info("dialog_handling_done", url=self._page.url)
 
     async def navigate_to_chats(self) -> None:
-        chat_icon = self._page.locator(
-            "nav a[href*='chat'], [class*='chat-nav'], "
-            "[class*='nav'] [class*='chat']"
-        ).first
-        try:
-            await chat_icon.click(timeout=5000)
-        except Exception:
-            icons = self._page.locator("nav a, .nav-item, [class*='sidebar'] a")
-            count = await icons.count()
-            if count >= 2:
-                await icons.nth(1).click()
-        await asyncio.sleep(2)
+        logger.info("navigate_to_chats", current_url=self._page.url)
+        await self._page.screenshot(path="/tmp/comm100_05_before_nav.png")
+
+        nav_selectors = [
+            "[class*='Chat'] svg",
+            "[class*='chat'] svg",
+            "nav a[href*='chat']",
+            "[class*='chat-nav']",
+            "[class*='nav'] [class*='chat']",
+            "[class*='LiveChat']",
+            "[class*='liveChat']",
+        ]
+        for selector in nav_selectors:
+            try:
+                el = self._page.locator(selector).first
+                if await el.is_visible(timeout=2000):
+                    await el.click(force=True)
+                    logger.info("nav_clicked", selector=selector)
+                    await asyncio.sleep(2)
+                    await self._page.screenshot(
+                        path="/tmp/comm100_06_after_nav.png"
+                    )
+                    return
+            except Exception:
+                continue
+
+        logger.info("nav_no_chat_icon_found_staying_on_current_page")
 
     async def get_ongoing_chat_count(self) -> int:
         try:
@@ -165,18 +180,33 @@ class AgentConsolePage:
         return 0
 
     async def get_chat_items(self) -> list[Locator]:
-        items = self._page.locator(
-            "[class*='chat-item'], [class*='chatItem'], "
-            "[class*='chat-list'] > div, [class*='chatList'] > div"
-        )
-        count = await items.count()
-        if count == 0:
-            items = self._page.locator(
-                ".ongoing-chats li, [class*='ongoing'] li, "
-                "[class*='ongoing'] > div"
-            )
+        selectors = [
+            "[class*='ChatItem-module']",
+            "[class*='chatItem']",
+            "[class*='chat-item']",
+            "[class*='chat-list'] > div",
+            "[class*='chatList'] > div",
+            "[class*='ChatList'] > div",
+            "[class*='ongoing'] li",
+            "[class*='ongoing'] > div",
+            "[class*='Ongoing'] > div",
+        ]
+        for selector in selectors:
+            items = self._page.locator(selector)
             count = await items.count()
-        return [items.nth(i) for i in range(count)]
+            if count > 0:
+                logger.debug(
+                    "chat_items_found", selector=selector, count=count
+                )
+                return [items.nth(i) for i in range(count)]
+        return []
+
+    async def take_debug_screenshot(self) -> None:
+        import time
+        ts = int(time.time()) % 10000
+        path = f"/tmp/comm100_debug_{ts}.png"
+        await self._page.screenshot(path=path)
+        logger.info("debug_screenshot", path=path, url=self._page.url)
 
     async def click_chat(self, index: int = 0) -> None:
         items = await self.get_chat_items()

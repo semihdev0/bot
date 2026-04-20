@@ -42,10 +42,17 @@ class ChatProcessor:
 
     async def run_polling_cycle(self) -> None:
         try:
-            await self._console.accept_new_chat()
+            accepted = await self._console.accept_new_chat()
+            if accepted:
+                logger.info("new_chat_accepted_in_cycle")
 
             chat_items = await self._console.get_chat_items()
+            logger.debug("polling_cycle", chat_count=len(chat_items))
+
             if not chat_items:
+                self._poll_count = getattr(self, "_poll_count", 0) + 1
+                if self._poll_count % 12 == 1:
+                    await self._console.take_debug_screenshot()
                 return
 
             for i, item in enumerate(chat_items):
