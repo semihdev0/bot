@@ -57,11 +57,15 @@ class ChatProcessor:
                     await self._console.take_debug_screenshot()
                 return
 
-            for i, item in enumerate(chat_items):
+            for i, item in enumerate(chat_items[:self._config.polling.max_chats_per_cycle]):
                 try:
-                    await item.evaluate("el => el.click()")
+                    await asyncio.wait_for(
+                        item.evaluate("el => el.click()"), timeout=5
+                    )
                     await asyncio.sleep(1)
                     await self._process_current_chat()
+                except asyncio.TimeoutError:
+                    logger.warning("chat_click_timeout", index=i)
                 except Exception as e:
                     logger.error("chat_process_error", index=i, error=str(e))
                     self._stats["errors"] += 1
@@ -77,10 +81,16 @@ class ChatProcessor:
 
     async def _process_current_chat(self) -> None:
         messages = await self._console.get_all_messages()
+        logger.info("chat_messages", count=len(messages))
         if not messages:
             return
 
         visitor_msgs = [m for m in messages if m.sender == "visitor" and m.content]
+        logger.info(
+            "visitor_messages",
+            count=len(visitor_msgs),
+            last=visitor_msgs[-1].content[:60] if visitor_msgs else "none",
+        )
         if not visitor_msgs:
             return
 
@@ -88,12 +98,15 @@ class ChatProcessor:
         msg_key = f"{hash(last_visitor_msg.content)}_{len(messages)}"
 
         if self._state.has_responded(msg_key):
+            logger.info("already_responded", key=msg_key)
             return
 
         last_msg_is_agent = messages[-1].sender == "agent"
         if last_msg_is_agent:
+            logger.info("last_msg_is_agent_skipping")
             return
 
+        logger.info("generating_response", msg=last_visitor_msg.content[:60])
         response = await self._generate_response(messages, last_visitor_msg)
         await self._console.send_reply(response)
 
