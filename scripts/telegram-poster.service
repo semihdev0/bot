@@ -1,0 +1,16 @@
+[Unit]
+Description=Telegram Channel Auto-Poster
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/user/bot
+ExecStart=/home/user/bot/venv/bin/python -m src.telegram.main
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

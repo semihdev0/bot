@@ -1,0 +1,67 @@
+# Telegram Kanal Otomatik Paylasim Yapilandirmasi
+# Hassas bilgiler (API_ID, API_HASH, PHONE) .env dosyasinda tanimlanir
+
+channels:
+  - "@kanal1"
+  - "@kanal2"
+  - "@kanal3"
+  - "@kanal4"
+  - "@kanal5"
+  - "@kanal6"
+  - "@kanal7"
+  - "@kanal8"
+  - "@kanal9"
+  - "@kanal10"
+
+schedule:
+  monday:
+    - time: "10:00"
+      message: |
+        Pazartesi sabah mesaji
+      image: "media/monday/morning.jpg"
+    - time: "18:00"
+      message: |
+        Pazartesi aksam mesaji
+      image: "media/monday/evening.jpg"
+
+  tuesday:
+    - time: "10:00"
+      message: |
+        Sali mesaji
+      image: "media/tuesday/promo.jpg"
+
+  wednesday:
+    - time: "10:00"
+      message: |
+        Carsamba mesaji
+      image: "media/wednesday/promo.jpg"
+
+  thursday:
+    - time: "10:00"
+      message: |
+        Persembe mesaji
+      image: "media/thursday/promo.jpg"
+
+  friday:
+    - time: "10:00"
+      message: |
+        Cuma mesaji
+      image: "media/friday/promo.jpg"
+
+  saturday:
+    - time: "12:00"
+      message: |
+        Cumartesi mesaji
+      image: "media/saturday/promo.jpg"
+
+  sunday:
+    - time: "12:00"
+      message: |
+        Pazar mesaji
+      image: "media/sunday/promo.jpg"
+
+posting:
+  delay_between_channels_seconds: 3
+  retry_on_failure: 3
+  retry_delay_seconds: 30
+  timezone: "Europe/Istanbul"

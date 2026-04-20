@@ -25,3 +25,7 @@ test-results/
 
 # Bot state
 processed_requests.json
+
+# Telegram sessions
+sessions/
+*.session
