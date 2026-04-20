@@ -40,7 +40,6 @@ class Comm100Credentials(BaseModel):
     email: str
     password: str
     site_id: str
-    api_base_url: str = "https://api15.lively-chat.com"
 
 
 class AnthropicCredentials(BaseModel):

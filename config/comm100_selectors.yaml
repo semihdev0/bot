@@ -1,0 +1,53 @@
+# Comm100 Agent Console - CSS/XPath Selectors
+
+login:
+  email_input:
+    strategy: "css"
+    value: "input[type='email'], input[name='email'], #email"
+  password_input:
+    strategy: "css"
+    value: "input[type='password'], input[name='password'], #password"
+  submit_button:
+    strategy: "css"
+    value: "button[type='submit'], input[type='submit'], .submit-btn"
+
+agent_console:
+  # Chat list (left panel)
+  chat_list_section:
+    strategy: "css"
+    value: ".chat-list, [class*='chat-list'], [class*='chatList']"
+  ongoing_chats:
+    strategy: "text"
+    value: "Ongoing"
+  chat_item:
+    strategy: "css"
+    value: ".chat-item, [class*='chat-item'], [class*='chatItem']"
+
+  # Chat area (center)
+  visitor_messages:
+    strategy: "css"
+    value: ".visitor-message, [class*='visitor'], [class*='message-visitor']"
+  message_content:
+    strategy: "css"
+    value: ".message-content, [class*='content'], [class*='text']"
+
+  # Reply area (bottom)
+  reply_textarea:
+    strategy: "css"
+    value: ".reply-area textarea, [class*='reply'] textarea, [contenteditable='true'], textarea"
+  send_button:
+    strategy: "css"
+    value: ".send-btn, [class*='send'], button[title='Send']"
+
+  # Navigation
+  chat_tab:
+    strategy: "css"
+    value: "[class*='chat'] svg, [class*='message'] svg, .nav-chat"
+
+  # Accept chat
+  go_to_chat_button:
+    strategy: "text"
+    value: "Go to Chat"
+  accept_button:
+    strategy: "text"
+    value: "Accept"

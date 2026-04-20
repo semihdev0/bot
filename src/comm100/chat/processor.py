@@ -1,4 +1,4 @@
-"""Main chat processing orchestrator for Comm100 live chat."""
+"""Main chat processing orchestrator using Playwright browser automation."""
 
 from __future__ import annotations
 
@@ -7,29 +7,27 @@ import asyncio
 import structlog
 
 from src.comm100.ai.claude_client import ClaudeClient
-from src.comm100.api.client import Comm100Client
-from src.comm100.api.models import Comm100Chat, Comm100Message
 from src.comm100.chat.state import ChatStateTracker
 from src.comm100.chat.template_matcher import TemplateMatcher
 from src.comm100.config.models import Comm100Settings
-from src.comm100.exceptions import Comm100ApiError, Comm100AuthError
+from src.comm100.pages.agent_console import AgentConsolePage, ChatMessage
 from src.monitoring.health import write_heartbeat
 
 logger = structlog.get_logger()
 
 
 class ChatProcessor:
-    """Orchestrates Comm100 chat processing."""
+    """Orchestrates Comm100 chat processing via browser automation."""
 
     def __init__(
         self,
-        api_client: Comm100Client,
+        console: AgentConsolePage,
         claude_client: ClaudeClient,
         template_matcher: TemplateMatcher,
         state: ChatStateTracker,
         config: Comm100Settings,
     ) -> None:
-        self._api = api_client
+        self._console = console
         self._claude = claude_client
         self._templates = template_matcher
         self._state = state
@@ -40,24 +38,23 @@ class ChatProcessor:
             "ai_responses": 0,
             "errors": 0,
         }
+        self._last_seen_count = 0
 
     async def run_polling_cycle(self) -> None:
         try:
-            chats = await self._api.get_active_chats()
-            chats = chats[: self._config.polling.max_chats_per_cycle]
+            await self._console.accept_new_chat()
 
-            for chat in chats:
+            chat_items = await self._console.get_chat_items()
+            if not chat_items:
+                return
+
+            for i, item in enumerate(chat_items):
                 try:
-                    await self._process_chat(chat)
-                except Comm100AuthError:
-                    raise
+                    await item.click()
+                    await asyncio.sleep(1)
+                    await self._process_current_chat()
                 except Exception as e:
-                    logger.error(
-                        "chat_process_error",
-                        chat_id=chat.id,
-                        error=str(e),
-                        exc_info=True,
-                    )
+                    logger.error("chat_process_error", index=i, error=str(e))
                     self._stats["errors"] += 1
 
             write_heartbeat(
@@ -65,58 +62,71 @@ class ChatProcessor:
                 processed=self._stats["processed"],
             )
 
-        except Comm100AuthError:
-            raise
-        except Comm100ApiError as e:
-            logger.error("polling_cycle_error", error=str(e))
+        except Exception as e:
+            logger.error("polling_cycle_error", error=str(e), exc_info=True)
             self._stats["errors"] += 1
 
-    async def _process_chat(self, chat: Comm100Chat) -> None:
-        if not self._state.is_active_chat(chat.id):
-            try:
-                await self._api.accept_chat(chat.id)
-            except Comm100ApiError:
-                pass
-            self._state.add_active_chat(chat.id)
-
-        messages = await self._api.get_chat_messages(
-            chat.id, limit=self._config.polling.message_fetch_limit
-        )
-
-        unresponded = self._state.get_unresponded_visitor_messages(messages)
-        if not unresponded:
+    async def _process_current_chat(self) -> None:
+        messages = await self._console.get_all_messages()
+        if not messages:
             return
 
-        chat.messages = messages
+        visitor_msgs = [m for m in messages if m.sender == "visitor" and m.content]
+        if not visitor_msgs:
+            return
 
-        for msg in unresponded:
-            response = await self._generate_response(chat, msg)
-            await self._api.send_message(chat.id, response)
-            self._state.mark_responded(msg.id)
-            self._stats["processed"] += 1
+        last_visitor_msg = visitor_msgs[-1]
+        msg_key = f"{hash(last_visitor_msg.content)}_{len(messages)}"
 
-            logger.info(
-                "message_responded",
-                chat_id=chat.id,
-                message_id=msg.id,
-                visitor_msg=msg.content[:80],
-                response=response[:80],
-            )
+        if self._state.has_responded(msg_key):
+            return
+
+        last_msg_is_agent = messages[-1].sender == "agent"
+        if last_msg_is_agent:
+            return
+
+        response = await self._generate_response(messages, last_visitor_msg)
+        await self._console.send_reply(response)
+
+        self._state.mark_responded(msg_key)
+        self._stats["processed"] += 1
+
+        logger.info(
+            "message_responded",
+            visitor_msg=last_visitor_msg.content[:80],
+            response=response[:80],
+        )
 
     async def _generate_response(
-        self, chat: Comm100Chat, visitor_message: Comm100Message
+        self, all_messages: list[ChatMessage], visitor_message: ChatMessage
     ) -> str:
         template_response = self._templates.match(visitor_message.content)
         if template_response:
             self._stats["template_responses"] += 1
-            logger.debug("using_template", chat_id=chat.id)
+            logger.debug("using_template")
             return template_response
 
         self._stats["ai_responses"] += 1
-        logger.debug("using_claude", chat_id=chat.id)
+        logger.debug("using_claude")
+
+        from src.comm100.api.models import Comm100Message
+        from datetime import datetime, timezone
+
+        conversation = []
+        for msg in all_messages:
+            conversation.append(
+                Comm100Message(
+                    id=str(hash(msg.content)),
+                    chat_id="current",
+                    sender_type="visitor" if msg.sender == "visitor" else "agent",
+                    content=msg.content,
+                    timestamp=datetime.now(tz=timezone.utc),
+                )
+            )
+
         return await self._claude.generate_response_safe(
-            conversation=chat.messages,
-            visitor_name=chat.visitor_name,
+            conversation=conversation,
+            visitor_name="",
         )
 
     async def run_loop(self, shutdown_event: asyncio.Event) -> None:
