@@ -33,30 +33,74 @@ class AgentConsolePage:
     async def login(self, email: str, password: str) -> None:
         url = AGENT_CONSOLE_URL.format(site_id=self._site_id)
         await self._page.goto(url, wait_until="networkidle", timeout=60000)
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
 
         current = self._page.url
         if "signin" in current or "login" in current:
             logger.info("login_required", url=current)
 
+            await self._page.screenshot(path="/tmp/comm100_login_page.png")
+
             email_input = self._page.locator(
-                "input[type='email'], input[name='email'], input[id*='email']"
+                "input[type='email'], input[name='email'], "
+                "input[id*='email'], input[id*='Email'], "
+                "input[placeholder*='mail'], input[placeholder*='Mail']"
             ).first
             await email_input.wait_for(state="visible", timeout=15000)
             await email_input.fill(email)
+            logger.info("login_email_filled")
 
             password_input = self._page.locator(
-                "input[type='password'], input[name='password']"
+                "input[type='password'], input[name='password'], "
+                "input[id*='password'], input[id*='Password']"
             ).first
+            await password_input.wait_for(state="visible", timeout=10000)
             await password_input.fill(password)
+            logger.info("login_password_filled")
 
-            submit = self._page.locator(
-                "button[type='submit'], input[type='submit']"
-            ).first
-            await submit.click()
+            submitted = False
+            submit_selectors = [
+                "button[type='submit']",
+                "input[type='submit']",
+                "button:has-text('Sign')",
+                "button:has-text('Log')",
+                "button:has-text('Giriş')",
+                "button:has-text('Submit')",
+                "a:has-text('Sign')",
+                "a:has-text('Log')",
+                "#btnLogin",
+                ".btn-login",
+                "[class*='login'] button",
+                "[class*='sign'] button",
+                "form button",
+            ]
+            for selector in submit_selectors:
+                try:
+                    btn = self._page.locator(selector).first
+                    if await btn.is_visible(timeout=2000):
+                        await btn.click()
+                        submitted = True
+                        logger.info("login_submit_clicked", selector=selector)
+                        break
+                except Exception:
+                    continue
 
-            await self._page.wait_for_url("**/agentconsole/**", timeout=30000)
-            logger.info("login_success")
+            if not submitted:
+                logger.info("login_submit_fallback_enter")
+                await password_input.press("Enter")
+
+            try:
+                await self._page.wait_for_url(
+                    "**/agentconsole/**", timeout=30000
+                )
+                logger.info("login_success")
+            except Exception:
+                await self._page.screenshot(path="/tmp/comm100_login_after.png")
+                logger.error(
+                    "login_redirect_timeout",
+                    current_url=self._page.url,
+                )
+                raise
         else:
             logger.info("already_logged_in")
 
