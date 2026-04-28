@@ -401,9 +401,9 @@ class UserProfile(BaseModel):
     @computed_field
     @property
     def son_7_gun_haftalik_kayip_var(self) -> bool:
-        """Whether user already received haftalık kayıp bonus in the last 7 days."""
-        seven_days_ago = datetime.now() - timedelta(days=7)
-        return self.bonus_history.has_approved_after("HAFTALIK", seven_days_ago)
+        """Whether user already received haftalık kayıp bonus in the last 6 days."""
+        six_days_ago = datetime.now() - timedelta(days=6)
+        return self.bonus_history.has_approved_after("HAFTALIK", six_days_ago)
 
 
 class BonusRequest(BaseModel):

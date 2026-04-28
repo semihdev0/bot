@@ -241,6 +241,7 @@ bonus_types:
             value: true
         action: reject
         reject_message_key: "haftalik_kayip_zaten_almis"
+        # Son 6 gün içinde almışsa reddedilir
 
       - name: "Net kayıp yok - kâr yapmış"
         conditions:
