@@ -40,6 +40,14 @@ bonus_types:
         action: reject
         reject_message_key: "ilk_kayip_yatirim_yok"
 
+      - name: "Birden fazla yatırım var - ilk yatırım değil"
+        conditions:
+          - field: "yatirim_sayisi"
+            operator: ">"
+            value: 1
+        action: reject
+        reject_message_key: "ilk_kayip_birden_fazla_yatirim"
+
       - name: "Son yatırım 2+ gün eski"
         conditions:
           - field: "son_yatirim_gunu_farki"

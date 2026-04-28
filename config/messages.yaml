@@ -28,6 +28,11 @@ rejection_messages:
     Risksiz yatırım sağlayabilirsiniz. Kaybetmeniz halinde dahi
     bakiyenizin %100 ü hesabınıza ekleme sağlanacaktır.
 
+  ilk_kayip_birden_fazla_yatirim: >-
+    İlk Kayıp Bonusu yalnızca ilk kaybınıza özeldir. İlk yatırımınızın
+    ardından kayıp yaşadığınızda 2. yatırımı yapmadan talep oluşturmanız
+    gerekmektedir.
+
   ilk_kayip_bakiye_yuksek: >-
     Bu bonustan yararlanmak için bakiyenizi 2 tl nin altında olması
     gerekmektedir. Ardından %100 ilk kayıp bonusunuz tanımlanacaktır.
