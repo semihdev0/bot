@@ -41,6 +41,7 @@ class ChatProcessor:
             "errors": 0,
         }
         self._greeted_chats: set[str] = set()
+        self._last_sent_per_chat: dict[str, str] = {}
         self._poll_count = 0
 
     async def run_polling_cycle(self) -> None:
@@ -95,42 +96,53 @@ class ChatProcessor:
 
     async def _handle_chat(self, chat_name: str, messages: list[ChatMessage]) -> None:
         visitor_msgs = [m for m in messages if m.sender == "visitor" and m.content]
-        agent_msgs = [m for m in messages if m.sender == "agent"]
 
-        # No agent message yet → send greeting (once per chat)
-        if not agent_msgs and chat_name not in self._greeted_chats:
-            logger.info("sending_greeting", chat=chat_name)
-            sent = await self._console.send_reply(GREETING)
-            if sent:
-                self._greeted_chats.add(chat_name)
-                self._stats["processed"] += 1
-            return
-
-        # No visitor messages → nothing to respond to
+        # Nothing to respond to until visitor speaks
         if not visitor_msgs:
             return
 
+        # Stable chat identifier derived from visitor's first message content.
+        # Independent of unstable list-preview text or DOM order.
+        chat_id = f"chat_{hash(visitor_msgs[0].content)}"
+
         last_visitor = visitor_msgs[-1]
-        msg_key = f"{hash(last_visitor.content)}_{len(messages)}"
+        # Key advances only when a new visitor message arrives
+        msg_key = f"{chat_id}_v{len(visitor_msgs)}_{hash(last_visitor.content)}"
 
         if self._state.has_responded(msg_key):
             return
 
-        # Last message is from agent → no new visitor input
+        # Last DOM message is from agent → our reply already landed; wait for next visitor msg
         if messages and messages[-1].sender == "agent":
+            self._state.mark_responded(msg_key)
             return
 
-        # Generate and send response
-        logger.info("generating_response", chat=chat_name, msg=last_visitor.content[:60])
-        response = await self._generate_response(messages, last_visitor)
+        # First reply in this chat: prepend greeting to AI/template response
+        if chat_id not in self._greeted_chats:
+            logger.info("first_reply_with_greeting", chat=chat_name, chat_id=chat_id)
+            body = await self._generate_response(messages, last_visitor)
+            response = f"{GREETING}\n\n{body}" if body and body != GREETING else GREETING
+        else:
+            logger.info("generating_response", chat=chat_name, msg=last_visitor.content[:60])
+            response = await self._generate_response(messages, last_visitor)
+
+        # Belt-and-suspenders: never send the same text twice in a row to the same chat
+        if self._last_sent_per_chat.get(chat_id) == response:
+            logger.warning("duplicate_send_suppressed", chat_id=chat_id)
+            self._state.mark_responded(msg_key)
+            return
+
         sent = await self._console.send_reply(response)
 
         if sent:
             self._state.mark_responded(msg_key)
+            self._greeted_chats.add(chat_id)
+            self._last_sent_per_chat[chat_id] = response
             self._stats["processed"] += 1
             logger.info(
                 "message_responded",
                 chat=chat_name,
+                chat_id=chat_id,
                 visitor_msg=last_visitor.content[:80],
                 response=response[:80],
             )

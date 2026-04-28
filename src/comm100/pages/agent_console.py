@@ -325,6 +325,20 @@ class AgentConsolePage:
                         inner_html = (await el.inner_html(timeout=2000)) or ""
                         if "Agent" in inner_html or "agent" in inner_html:
                             sender = "agent"
+                        else:
+                            # CSS-module hashed class fallback: outgoing messages in
+                            # Comm100 typically render aligned right with a different
+                            # background. Probe computed style as a last resort.
+                            try:
+                                aligned_right = await el.evaluate(
+                                    "el => { const s = getComputedStyle(el);"
+                                    " return s.textAlign === 'right' || s.alignSelf === 'flex-end'"
+                                    " || s.justifyContent === 'flex-end'; }"
+                                )
+                                if aligned_right:
+                                    sender = "agent"
+                            except Exception:
+                                pass
 
                     messages.append(ChatMessage(sender=sender, content=content))
                 except Exception:
